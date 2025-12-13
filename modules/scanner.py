@@ -55,4 +55,3 @@ if __name__ == "__main__":
     print("\n--- RAW JSON RESULT ---\n")
     print(scan_json)
     print("\n-----------------------\n")
-    

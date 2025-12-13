@@ -1,1 +1,2 @@
 python-nmap==0.4.1
+nmap3==0.7.5x
