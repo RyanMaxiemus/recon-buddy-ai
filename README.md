@@ -1,6 +1,6 @@
 # 🕵️ Recon Buddy AI
 
-> Automated recon for the modern (lazy) security pro. Wraps Nmap, Shodan, and DNS utils into one Python tool, then uses AI to summarize the attack surface so you don't have to parse XML manually.
+> Automated recon for the modern security pro. Wraps Nmap, Shodan, and DNS utils into one Python tool, then uses AI to summarize the attack surface so you don't have to parse XML manually.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-In%20Development-yellow.svg)]()
@@ -21,7 +21,7 @@ Because staring at raw Nmap XML output is a violation of the Geneva Convention. 
 
 1.  **Clone the repo:**
     ```bash
-    git clone [https://github.com/ryanmaxiemus/recon-buddy-ai.git](https://github.com/ryanmaxiemus/recon-buddy-ai.git)
+    git clone [https://github.com/RyanMaxiemus/recon-buddy-ai.git](https://github.com/RyanMaxiemus/recon-buddy-ai.git)
     cd project-name
     ```
 
