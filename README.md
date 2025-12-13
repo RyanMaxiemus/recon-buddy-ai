@@ -21,7 +21,7 @@ Because staring at raw Nmap XML output is a violation of the Geneva Convention. 
 
 1.  **Clone the repo:**
     ```bash
-    git clone [https://github.com/RyanMaxiemus/recon-buddy-ai.git](https://github.com/RyanMaxiemus/recon-buddy-ai.git)
+    git clone https://github.com/RyanMaxiemus/recon-buddy-ai.git
     cd project-name
     ```
 
