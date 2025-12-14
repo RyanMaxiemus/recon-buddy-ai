@@ -1,2 +1,20 @@
-python-nmap==0.4.1
-nmap3==0.7.5x
+# --- Day 1-2: Scanning & Data Gathering ---
+# Wrapper for Nmap (Core functionality)
+python-nmap
+# For DNS lookups
+dnspython
+
+# --- Day 3: AI / LLM Integration ---
+# Used for general HTTP requests, essential for Shodan and cloud LLMs (like OpenAI)
+requests
+# For local LLMs (Ollama) support - optional, but recommended for innovation!
+ollama
+
+# --- Day 4-6: Reporting, Logging, and UX ---
+# Used for beautiful command-line interfaces (rich text, progress bars, tables)
+rich
+# Handles the environment variables (.env file) cleanly for API keys
+python-dotenv
+# Core logging system
+# (Often built-in, but listing it here is a good reminder)
+# logging
