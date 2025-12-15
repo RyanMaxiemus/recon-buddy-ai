@@ -53,8 +53,8 @@ python main.py --target example.com --ai-summary --output report.md
 ## 🗺️ Roadmap
 
   - [x] **Core:** Nmap & DNS Module
-  - [ ] **Intel:** Shodan API Integration
-  - [ ] **Brain:** AI Summarizer (Local + Cloud support)
+  - [x] **Intel:** Shodan API Integration
+  - [x] **Brain:** AI Summarizer (Local + Cloud support)
   - [ ] **Paperwork:** PDF/MD Report Generator
   - [ ] **Polish:** Logging & Error Handling
   - [ ] **UI:** CLI Beautification (Rich/Typer)
