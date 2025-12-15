@@ -1,0 +1,20 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Dependency Files
+requirements.txt
+*wheel
+
+# Project/Build Artifacts
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.env
+
+# Operating System Files
+.DS_Store
+Thumbs.db
