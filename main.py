@@ -1,8 +1,14 @@
 import argparse
 import json
+import os
 from dotenv import load_dotenv
 
-# Import the modules we just built
+# Import the logging setup
+from log_config import setup_logging
+
+# Initialize logging immediately
+log = setup_logging() # Initialize and get the logger instance
+
 # Make sure your project structure has 'modules' directory
 from modules.scanner import run_basic_scan
 from modules.dns_module import run_dns_lookup
@@ -25,21 +31,23 @@ def orchestrate_recon(target: str) -> None:
     Args:
         target: The IP address or domain name to scan.
     """
-    print("=========================================")
-    print(f"🕵️ Starting AI-Powered Recon on: {target}")
-    print("=========================================")
+    log.info("=========================================")
+    log.info(f"🕵️ Starting AI-Powered Recon on: {target}")
+    log.info("=========================================")
 
     # 1. DNS Lookup (Get context and primary IP if we started with a domain)
+    log.debug("🔍 Attempting DNS lookup for target: {target}") # <-- Use log.debug for detailed steps
     dns_results = run_dns_lookup(target)
     
     # 2. Determine the primary IP for scanning/Shodan. If the target was a domain, use the first resolved IP.
     scan_target_ip = target
+    # Example for error handling with logging:
     if not is_ip_address(target):
         if dns_results.get('ipv4_addresses'):
             scan_target_ip = dns_results['ipv4_addresses'][0]
-            print(f"✅ Resolved domain '{target}' to primary IP: {scan_target_ip}")
+            log.info(f"✅ Resolved domain '{target}' to primary IP: {scan_target_ip}")
         else:
-            print("❌ ERROR: Could not resolve domain to an IP. Aborting scan.")
+            log.error("❌ ERROR: Could not resolve domain to an IP. Aborting scan.")
             return
 
     # 3. Run Basic Nmap Scan

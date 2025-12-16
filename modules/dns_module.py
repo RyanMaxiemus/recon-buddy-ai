@@ -1,6 +1,11 @@
 import dns.resolver
 import dns.reversename
+import logging
 from ipaddress import IPv4Address, IPv6Address, AddressValueError
+
+# Get a module-specific logger instance
+log = logging.getLogger("RECON.Scanner") # <-- Use a hierarchical name (e.g., RECON.Scanner)
+# This will inherit the setup from the root logger configured in main.py
 
 def is_ip_address(target: str) -> bool:
     """Checks if the target string is a valid IPv4 or IPv6 address."""
@@ -28,7 +33,7 @@ def run_dns_lookup(target: str) -> dict:
 
     if is_ip_address(target):
         # --- Revers Lookup (IP -> Domain) ---
-        print(f"    [DNS] Performing reverse lookup for IP: {target}")
+        log.info(f"    [DNS] Performing reverse lookup for IP: {target}")
         try:
             # 1. Convert IP to the special reverse format (e.g., 8.8.8.8 -> 8.8.8.8.in-addr.arpa)
             rev_name = dns.reversename.from_address(target)
@@ -60,11 +65,11 @@ def run_dns_lookup(target: str) -> dict:
 if __name__ == "__main__":
     # Test 1: Domain Lookup (Forward)
     domain_result = run_dns_lookup("google.com")
-    print("\n --- GOOGLE.COM LOOKUP ---")
-    print(domain_result)
+    log.info("\n --- GOOGLE.COM LOOKUP ---")
+    log.info(domain_result)
 
     # Test 2: IP Lookup (Reverse)
     # Using one of Google's public DNS IPs
     ip_result = run_dns_lookup("8.8.8.8")
-    print("\n --- 8.8.8.8 LOOKUP (PTR) ---")
-    print(ip_result)
+    log.info("\n --- 8.8.8.8 LOOKUP (PTR) ---")
+    log.info(ip_result)

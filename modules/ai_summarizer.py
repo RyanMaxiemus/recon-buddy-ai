@@ -1,5 +1,10 @@
 import ollama
 import json
+import logging
+
+# Get a module-specific logger instance
+log = logging.getLogger("RECON.Scanner")# <-- Use a hierarchical name (e.g., RECON.Scanner)
+# This will inherit the setup from the root logger configured in main.py
 
 # IMPORTANT PREREQUISITE:
 # You must have Ollama installed and running (ollama serve)
@@ -61,7 +66,7 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
         # 4. Initialize Client and Call the API
         client = ollama.OllamaClient(host=OLLAMA_HOST)
         
-        print(f"    [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
+        log.info(f"    [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
         
         # We use the 'chat' endpoint which is generally more flexible than 'generate' 
         # for structured prompts using system messages.
@@ -82,7 +87,7 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
     
 if __name__ == "__main__":
     # --- Example Usage (Requires Ollama server to be running) ---
-    print("--- TESTING AI SUMMARIZER (Requires local Ollama server and model) ---")
+    log.info("--- TESTING AI SUMMARIZER (Requires local Ollama server and model) ---")
 
     # Dummy data simulating outputs from your other modules
     dummy_nmap = {"scan": {"192.168.1.1": {"status": "up", "ports": [{"port": 80, "service": "http", "version": "Apache 2.4.7"}, {"port": 22, "service": "ssh", "version": "OpenSSH 7.2p2"}]}}}
@@ -91,6 +96,6 @@ if __name__ == "__main__":
 
     summary = create_ai_summary(dummy_nmap, dummy_shodan, dummy_dns)
 
-    print("\n--- FINAL AI REPORT ---\n")
-    print(summary)
-    print("\n-----------------------\n")
+    log.info("\n--- FINAL AI REPORT ---\n")
+    log.info(summary)
+    log.info("\n-----------------------\n")

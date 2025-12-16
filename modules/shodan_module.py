@@ -1,7 +1,12 @@
 import shodan
 import os
-from dotenv import load_dotenv
 import json
+import logging
+from dotenv import load_dotenv
+
+# Get a module-specific logger instance
+log = logging.getLogger("RECON.Scanner") # <-- Use a hierarchical name (e.g., RECON.Scanner)
+# This will inherit the setup from the root logger configured in main.py
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -20,7 +25,7 @@ def get_shodan_host_info(ip_address: str) -> dict:
         A dictionary containing the host information from Shodan, or an error dictionary.
     """
     if not SHODAN_API_KEY:
-        print("❌ ERROR: SHODAN_API_KEY not found in environment variables.")
+        log.error("❌ ERROR: SHODAN_API_KEY not found in environment variables.")
         return {"error": "Shodan API key missing."}
     
     try:
@@ -51,7 +56,7 @@ if __name__ == "__main__":
 
     shodan_data = get_shodan_host_info(test_ip)
 
-    print("\n--- RAW SHODAN RESULT ---\n")
+    log.info("\n--- RAW SHODAN RESULT ---\n")
     # Pretty print the resulting dictionary as JSON
-    print(json.dumps(shodan_data, indent=4))
-    print("\n-------------------------\n")
+    log.info(json.dumps(shodan_data, indent=4))
+    log.info("\n-------------------------\n")
