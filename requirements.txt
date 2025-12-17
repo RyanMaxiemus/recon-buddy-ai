@@ -1,21 +1,17 @@
-# --- Day 1-2: Scanning & Data Gathering ---
-# Wrapper for Nmap (Core functionality)
-python-nmap
-# For DNS lookups
-dnspython
-# Shodan API client
-shodan
+# --- Core Recon ---
+python-nmap>=0.7.1
+dnspython>=2.6.1
+shodan>=1.31.0
 
-# Used for general HTTP requests, essential for Shodan and cloud LLMs (like OpenAI)
-requests
-# For local LLMs (Ollama) support - optional, but recommended for innovation!
-ollama
+# --- AI & Logic ---
+ollama>=0.2.1
+requests>=2.31.0
+python-dotenv>=1.0.1
 
-# --- Day 4-6: Reporting, Logging, and UX ---
-# Used for beautiful command-line interfaces (rich text, progress bars, tables)
-rich
-# Handles the environment variables (.env file) cleanly for API keys
-python-dotenv
-# Core logging system
-# (Often built-in, but listing it here is a good reminder)
-# logging
+# --- The "Pretty" Factor (CLI/GUI) ---
+rich>=13.7.1
+typer>=0.12.3
+
+# --- Reporting ---
+Markdown>=3.6
+WeasyPrint>=61.2

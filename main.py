@@ -1,6 +1,36 @@
 import argparse
 import json
 import os
+import sys
+from datetime import datetime
+
+def check_dependencies():
+    dependencies = {"python-dotenv": "dotenv",
+                         "python-nmap": "nmap",
+                         "dnspython": "dns",
+                         "shodan": "shodan",
+                         "ollama": "ollama",
+                         "requests": "requests",
+                         "rich": "rich",
+                         "typer": "typer",
+                         "markdown": "markdown",
+                         "weasyprint": "weasyprint"}
+    missing_packages = []
+
+    for package, import_name in dependencies.items():
+        # We check the import name, not the install name.
+        try:
+            __import__(import_name)
+        except ImportError:
+            missing_packages.append(package)
+
+    if missing_packages:
+        print(f"❌ Critical Failure: Missing dependencies: {', '.join(missing_packages)}")
+        print(f"👉 Fix it by running: pip install {' '.join(missing_packages)}")
+        sys.exit(1)
+
+check_dependencies()
+
 from dotenv import load_dotenv
 from modules.reporter import generate_markdown_report
 

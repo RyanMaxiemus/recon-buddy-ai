@@ -1,0 +1,29 @@
+[project]
+name = "recon-buddy-ai"
+version = "0.1.0"
+description = "Automated recon for the modern security pro. Wraps Nmap, Shodan, and DNS utils into one Python tool, then uses AI to summarize the attack surface so you don't have to parse XML manually. Generates clean reports instantly. Stop staring at terminal output and let the bot explain it."
+authors = [
+    {name = "Ryan Maxie",email = "MichaelRMaxie@Gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "python-nmap (>=0.7.1,<0.8.0)",
+    "dnspython (>=2.8.0,<3.0.0)",
+    "shodan (>=1.31.0,<2.0.0)",
+    "ollama (>=0.6.1,<0.7.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "rich (>=14.2.0,<15.0.0)",
+    "typer (>=0.20.0,<0.21.0)",
+    "markdown (>=3.10,<4.0)",
+    "weasyprint (>=67.0,<68.0)"
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
