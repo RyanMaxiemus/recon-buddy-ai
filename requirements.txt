@@ -3,8 +3,9 @@
 python-nmap
 # For DNS lookups
 dnspython
+# Shodan API client
+shodan
 
-# --- Day 3: AI / LLM Integration ---
 # Used for general HTTP requests, essential for Shodan and cloud LLMs (like OpenAI)
 requests
 # For local LLMs (Ollama) support - optional, but recommended for innovation!

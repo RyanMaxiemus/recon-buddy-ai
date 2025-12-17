@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 from dotenv import load_dotenv
+from modules.reporter import generate_markdown_report
 
 # Import the logging setup
 from log_config import setup_logging
@@ -27,6 +28,7 @@ def orchestrate_recon(target: str) -> None:
     4. Queries Shodan for additional host information.
     5. Generates an AI-driven security summary.
     6. Outputs the final report.
+    7. Generates a markdown report.
 
     Args:
         target: The IP address or domain name to scan.
@@ -72,6 +74,18 @@ def orchestrate_recon(target: str) -> None:
     
     # 6. Output the result
     print(final_summary_report)
+
+    # 7. Generate Final Markdown Report
+    report_filename = f"recon_report_{scan_target_ip.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    generate_markdown_report(
+        target=target,
+        nmap_data=nmap_results,
+        shodan_data=shodan_results,
+        dns_data=dns_results,
+        ai_summary=final_summary_report,
+        output_file=report_filename
+    )
+    print(f"📄 Markdown report generated: {report_filename}")
 
 def main():
     # Set up argument parsing for command-line execution
