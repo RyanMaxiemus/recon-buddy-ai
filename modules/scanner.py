@@ -32,13 +32,25 @@ def run_basic_scan(target_ip: str,ports: str = '22,80,443,8080') -> str:
         log.info(f" [Nmap] Scanning {target_ip} on ports {ports} with args: {scan_args}")
         nm.scan(hosts=target_ip,arguments=scan_args)
 
-        # 4. Get the result in the 'nmap_report' format, which is a big dictionary.
-        # This is the 'raw' structured output we want from Nmap.
-        raw_result_dict = nm.nmap_report()
+        # 4. Convert the PortScanner object to a dictionary format.
+        # The PortScanner object stores results internally; we need to extract them.
+        raw_result_dict = {
+            'scan': {host: nm[host].all_protocols() for host in nm.all_hosts()},
+            'nmap': {'command_line': nm.command_line(), 'scanstats': nm.scanstats()}
+        }
+        
+        # Also include port information
+        for host in nm.all_hosts():
+            raw_result_dict['scan'][host] = {
+                'status': nm[host].state(),
+                'protocols': {}
+            }
+            for proto in nm[host].all_protocols():
+                raw_result_dict['scan'][host]['protocols'][proto] = nm[host][proto]
 
         # 5. Convert the Python dictionary to a clean JSON string for easier consumption.
         # The 'indent=4' makes the JSON output human-readable in the console.
-        json_output = json.dumps(raw_result_dict, indent=4)
+        json_output = json.dumps(raw_result_dict, indent=4, default=str)
 
         return json_output
     
