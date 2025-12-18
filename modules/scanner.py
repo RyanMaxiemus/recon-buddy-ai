@@ -22,10 +22,10 @@ def run_basic_scan(target_ip: str,ports: str = '22,80,443,8080') -> str:
         nm = nmap.PortScanner()
 
         # 2. Define the Nmap scan arguments.
-        # -sS: SYN Stealth Scan (fast and discreet)
+        # -sT: TCP Connect Scan (no root required, works without sudo)
         # -T4: Faster execution (aggressive timing)
         # -p: Specify ports to scan
-        scan_args = f'-sS -T4 -p {ports}'
+        scan_args = f'-sT -T4 -p {ports}'
 
         # 3. Execute the Nmap scan on the target IP with the defined arguments.
         # The output of scan is a structured dictionary.

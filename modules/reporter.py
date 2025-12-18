@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 
 # Get the logger instance from the root logging setup
-logger = logging.getLogger("RECON.Reporter")
+log = logging.getLogger("RECON.Reporter")
 
 def format_nmap_ports(nmap_dict: dict) -> str:
     """

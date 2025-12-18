@@ -63,20 +63,16 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
     )
 
     try:
-        # 4. Initialize Client and Call the API
-        client = ollama.OllamaClient(host=OLLAMA_HOST)
-        
+        # 4. Call the Ollama API using the modern library interface
         log.info(f"    [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
         
-        # We use the 'chat' endpoint which is generally more flexible than 'generate' 
-        # for structured prompts using system messages.
-        response = client.chat(
+        # Use the modern ollama library API (no OllamaClient needed)
+        response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=[
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ],
-            # Options can be added here, e.g., 'temperature': 0.1 for less creativity
-            options={'temperature': 0.1}
+            ]
         )
 
         return response['message']['content']

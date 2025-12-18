@@ -1,145 +1,115 @@
 import argparse
 import json
 import os
-import sys
 from datetime import datetime
-
-def check_dependencies():
-    dependencies = {"python-dotenv": "dotenv",
-                         "python-nmap": "nmap",
-                         "dnspython": "dns",
-                         "shodan": "shodan",
-                         "ollama": "ollama",
-                         "requests": "requests",
-                         "rich": "rich",
-                         "typer": "typer",
-                         "markdown": "markdown",
-                         "weasyprint": "weasyprint"}
-    missing_packages = []
-
-    for package, import_name in dependencies.items():
-        # We check the import name, not the install name.
-        try:
-            __import__(import_name)
-        except ImportError:
-            missing_packages.append(package)
-
-    if missing_packages:
-        print(f"❌ Critical Failure: Missing dependencies: {', '.join(missing_packages)}")
-        print(f"👉 Fix it by running: pip install {' '.join(missing_packages)}")
-        sys.exit(1)
-
-check_dependencies()
-
 from dotenv import load_dotenv
-from modules.reporter import generate_markdown_report
 
-# Import the logging setup
+# UI & Logging
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from log_config import setup_logging
 
-# Initialize logging immediately
-log = setup_logging() # Initialize and get the logger instance
-
-# Make sure your project structure has 'modules' directory
+# Custom Modules (Ensure these are in your /modules folder)
 from modules.scanner import run_basic_scan
-from modules.dns_module import run_dns_lookup
+from modules.dns_module import run_dns_lookup, is_ip_address
 from modules.shodan_module import get_shodan_host_info
 from modules.ai_summarizer import create_ai_summary
+from modules.reporter import generate_markdown_report
 
-# Load environment variables from a .env file (for API keys, etc.)
+# --- Initialization ---
 load_dotenv()
+console = Console()
+log = setup_logging()
 
-def orchestrate_recon(target: str) -> None:
-    """
-    Main function to execute the full recon and analysis pipeline:
-    1. Performs DNS lookups.
-    2. Determines the primary IP address.
-    3. Runs a basic Nmap scan.
-    4. Queries Shodan for additional host information.
-    5. Generates an AI-driven security summary.
-    6. Outputs the final report.
-    7. Generates a markdown report.
+def orchestrate_recon(target: str):
+    """The central nervous system of the recon operation."""
+    console.print(Panel.fit("🕵️ [bold cyan]AI RECON ORCHESTRATOR[/bold cyan]", border_style="magenta"))
+    log.info(f"Session started for target: {target}")
 
-    Args:
-        target: The IP address or domain name to scan.
-    """
-    log.info("=========================================")
-    log.info(f"🕵️ Starting AI-Powered Recon on: {target}")
-    log.info("=========================================")
+    # Use 'with Progress' to handle the sleek status bars
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        
+        # 1. DNS Phase: Checking the ID at the door
+        progress.add_task(description="[yellow]Fetching DNS records...", total=None)
+        dns_results = run_dns_lookup(target)
+        
+        # Resolve target to IP if user provided a domain
+        scan_target_ip = target
+        if not is_ip_address(target):
+            if dns_results.get('ipv4_addresses'):
+                scan_target_ip = dns_results['ipv4_addresses'][0]
+                log.info(f"Resolved {target} to {scan_target_ip}")
+            else:
+                log.error(f"DNS failure for {target}")
+                console.print(f"[bold red]Error:[/bold red] Could not resolve {target}")
+                return
 
-    # 1. DNS Lookup (Get context and primary IP if we started with a domain)
-    log.debug("🔍 Attempting DNS lookup for target: {target}") # <-- Use log.debug for detailed steps
-    dns_results = run_dns_lookup(target)
+        # 2. Nmap Phase: Peeking through the windows
+        progress.add_task(description="[green]Scanning ports (Nmap)...", total=None)
+        nmap_json = run_basic_scan(scan_target_ip)
+        nmap_results = json.loads(nmap_json)
+        
+        # 3. Shodan Phase: Checking the global background
+        progress.add_task(description="[blue]Consulting Shodan Oracle...", total=None)
+        shodan_results = get_shodan_host_info(scan_target_ip)
+        
+        # 4. AI Phase: The 'Brain' work
+        progress.add_task(description="[magenta]AI is analyzing data (Ollama)...", total=None)
+        ai_summary = create_ai_summary(nmap_results, shodan_results, dns_results)
+
+    # --- CLI RESULTS SUMMARY ---
+    # Give the user some instant gratification before they open the report
+    table = Table(title=f"Intel Summary: {target}", show_header=True, header_style="bold cyan")
+    table.add_column("Category", style="dim")
+    table.add_column("Result")
     
-    # 2. Determine the primary IP for scanning/Shodan. If the target was a domain, use the first resolved IP.
-    scan_target_ip = target
-    # Example for error handling with logging:
-    if not is_ip_address(target):
-        if dns_results.get('ipv4_addresses'):
-            scan_target_ip = dns_results['ipv4_addresses'][0]
-            log.info(f"✅ Resolved domain '{target}' to primary IP: {scan_target_ip}")
-        else:
-            log.error("❌ ERROR: Could not resolve domain to an IP. Aborting scan.")
-            return
-
-    # 3. Run Basic Nmap Scan
-    nmap_json = run_basic_scan(scan_target_ip)
-    nmap_results = json.loads(nmap_json)
-    print(f"✅ Nmap scan complete for {scan_target_ip}.")
-
-    # 4. Query Shodan for Host Information
-    # We use the same IP for Shodan lookup.
-    shodan_results = get_shodan_host_info(scan_target_ip)
-    print(f"✅ Shodan lookup complete for {scan_target_ip}.")
-
-    print("\n-----------------------------------------")
-    print("🧠 Starting AI Analysis...")
-
-    # 5. Generate AI-Driven Security Summary
-    # Pass all structured data to the LLM for summarization.
-    final_summary_report = create_ai_summary(nmap_results, shodan_results, dns_results)
+    table.add_row("Primary IP", scan_target_ip)
+    table.add_row("Organization", str(shodan_results.get('org', 'Unknown')))
     
-    print("✅ Analysis complete. Final Report:")
-    print("-----------------------------------------\n")
+    # Extract port list for the table
+    ports = []
+    for host, data in nmap_results.get('scan', {}).items():
+        if 'ports' in data:
+            ports = [str(p['portid']) for p in data['ports']]
+    table.add_row("Open Ports", ", ".join(ports) if ports else "[red]None Detected[/red]")
     
-    # 6. Output the result
-    print(final_summary_report)
+    console.print(table)
+    console.print(Panel(ai_summary, title="[bold gold1]AI Security Insight[/bold gold1]", border_style="gold1"))
 
-    # 7. Generate Final Markdown Report
-    report_filename = f"recon_report_{scan_target_ip.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    generate_markdown_report(
-        target=target,
-        nmap_data=nmap_results,
-        shodan_data=shodan_results,
-        dns_data=dns_results,
-        ai_summary=final_summary_report,
-        output_file=report_filename
+    # 5. Reporting Phase: Writing it down for posterity
+    report_name = f"report_{target.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    success = generate_markdown_report(
+        target, nmap_results, shodan_results, dns_results, ai_summary, report_name
     )
-    print(f"📄 Markdown report generated: {report_filename}")
+    
+    if success:
+        console.print(f"\n[bold green]Success![/bold green] Report saved to: [underline]{report_name}[/underline]")
+        log.info(f"Report generated: {report_name}")
+    else:
+        console.print("\n[bold red]Error:[/bold red] Failed to generate report file.")
 
 def main():
-    # Set up argument parsing for command-line execution
-    parser = argparse.ArgumentParser(
-        description="AI-Powered Network Reconnaissance and Analysis Tool.")
-    parser.add_argument(
-        '--target',
-        required=True,
-        help='The IP address or hostname to scan (e.g., 192.168.1.1 or scanme.nmap.org).'
-    )
-
-    # For future arguments (e.g., --output, --llm-model, --ports)
-    # parser.add_argument(...)
-
+    parser = argparse.ArgumentParser(description="AI-Powered Recon & Scan Tool")
+    parser.add_argument('--target', required=True, help='The IP or Domain to investigate')
     args = parser.parse_args()
 
-    # Check for root/admin privileges needed for SYN scan (Nmap -sS)
-    if os.geteuid() != 0:
-        print("⚠️ WARNING: Nmap SYN scan (-sS) requires root/administrator privileges.")
-        print("   Falling back to a less stealthy connect scan (-sT) if needed, or run with 'sudo'.")
-        # In a real tool, you would dynamically change the scan argument here.
+    # Quick privilege check for Nmap (Linux/macOS)
+    if os.name != 'nt' and os.geteuid() != 0:
+        console.print("[yellow]Note:[/yellow] Running without sudo. Nmap may use slower TCP connect scans.")
 
-    # Start the recon process
-    orchestrate_recon(args.target)
+    try:
+        orchestrate_recon(args.target)
+    except KeyboardInterrupt:
+        console.print("\n[bold red]Aborted.[/bold red] Getting out of here!")
+    except Exception as e:
+        log.exception("A fatal error occurred")
+        console.print(f"[bold red]Fatal Error:[/bold red] {e}")
 
 if __name__ == "__main__":
     main()
