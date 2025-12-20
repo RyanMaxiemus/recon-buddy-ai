@@ -12,9 +12,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from log_config import setup_logging
 
 # Custom Modules (Ensure these are in your /modules folder)
-from modules.scanner import run_basic_scan
+from modules.scanner import run_basic_scan, UnifiedRecon
 from modules.dns_module import run_dns_lookup, is_ip_address
-from modules.shodan_module import get_shodan_host_info
 from modules.ai_summarizer import create_ai_summary
 from modules.reporter import generate_markdown_report
 
@@ -50,14 +49,37 @@ def orchestrate_recon(target: str):
                 console.print(f"[bold red]Error:[/bold red] Could not resolve {target}")
                 return
 
-        # 2. Nmap Phase: Peeking through the windows
-        progress.add_task(description="[green]Scanning ports (Nmap)...", total=None)
-        nmap_json = run_basic_scan(scan_target_ip)
-        nmap_results = json.loads(nmap_json)
+        # 2. Initialize UnifiedRecon with API keys
+        progress.add_task(description="[cyan]Initializing multi-source recon...", total=None)
+        api_keys = {
+            'netlas': os.getenv('NETLAS_API_KEY'),
+            'censys_id': os.getenv('CENSYS_API_ID'),
+            'censys_secret': os.getenv('CENSYS_API_SECRET'),
+            'criminal_ip': os.getenv('CRIMINAL_IP_API_KEY')
+        }
+        unified_recon = UnifiedRecon(api_keys)
         
-        # 3. Shodan Phase: Checking the global background
-        progress.add_task(description="[blue]Consulting Shodan Oracle...", total=None)
-        shodan_results = get_shodan_host_info(scan_target_ip)
+        # 3. Unified Recon Phase: Query all sources in priority order
+        progress.add_task(description="[green]Querying multiple reconnaissance sources...", total=None)
+        unified_results = unified_recon.get_ip_info(scan_target_ip, allow_nmap=True)
+        
+        # Convert ports to nmap-like format for compatibility
+        nmap_results = {
+            "scan": {
+                scan_target_ip: {
+                    "status": "up",
+                    "ports": [{"portid": str(p), "protocol": "tcp", "state": "open"} for p in unified_results.get("ports", [])],
+                    "source": unified_results.get("source", "Multiple")
+                }
+            }
+        }
+        
+        # Format api_reports as shodan-like data for compatibility
+        shodan_results = {
+            "org": "Unknown",
+            "api_reports": unified_results.get("api_reports", {}),
+            "source_info": unified_results.get("source", "Multiple")
+        }
         
         # 4. AI Phase: The 'Brain' work
         progress.add_task(description="[magenta]AI is analyzing data (Ollama)...", total=None)
@@ -70,14 +92,11 @@ def orchestrate_recon(target: str):
     table.add_column("Result")
     
     table.add_row("Primary IP", scan_target_ip)
-    table.add_row("Organization", str(shodan_results.get('org', 'Unknown')))
+    table.add_row("Data Source", unified_results.get('source', 'Unknown'))
     
     # Extract port list for the table
-    ports = []
-    for host, data in nmap_results.get('scan', {}).items():
-        if 'ports' in data:
-            ports = [str(p['portid']) for p in data['ports']]
-    table.add_row("Open Ports", ", ".join(ports) if ports else "[red]None Detected[/red]")
+    ports = unified_results.get("ports", [])
+    table.add_row("Open Ports", ", ".join(map(str, ports)) if ports else "[red]None Detected[/red]")
     
     console.print(table)
     console.print(Panel(ai_summary, title="[bold gold1]AI Security Insight[/bold gold1]", border_style="gold1"))

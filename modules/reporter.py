@@ -36,16 +36,29 @@ def format_nmap_ports(nmap_dict: dict) -> str:
 def generate_markdown_report(target: str, nmap_data: dict, shodan_data: dict, dns_data: dict, ai_summary: str, output_path: str) -> bool:
     """
     Creates the final structured Markdown report file.
+    Now supports unified recon data in addition to traditional Shodan format.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Extract primary IP from nmap_data (unified recon format)
+    primary_ip = "N/A"
+    for host in nmap_data.get('scan', {}).keys():
+        primary_ip = host
+        break
+    
+    # Extract data source information
+    data_source = shodan_data.get('source_info', 'Multiple Sources')
+    api_reports = shodan_data.get('api_reports', {})
+    api_status_str = ", ".join([f"{api}: {status}" for api, status in api_reports.items()])
     
     # --- 1. Assemble the Report Sections ---
 
     # 1.1 Header and Metadata
-    report_content = f"""# Reconnaissance and Analysis Report: {target}\n\n
+    report_content = f"""# Reconnaissance and Analysis Report: {target}
 
 * **Target:** `{target}`
-* **Primary IP:** `{nmap_data.get('scan', {}).get(target, {}).get('addresses', {}).get('ipv4', 'N/A')}`
+* **Primary IP:** `{primary_ip}`
+* **Data Source:** {data_source}
 * **Report Generated:** {timestamp}
 
 ## 🧠 AI-Generated Security Summary
@@ -56,21 +69,19 @@ def generate_markdown_report(target: str, nmap_data: dict, shodan_data: dict, dn
 
 ## 🔎 Technical Findings
 
-### A. Network Footprint (Nmap)
+### A. Network Footprint (Unified Recon)
 
 The following open ports were detected on the target IP:
 
 {format_nmap_ports(nmap_data)}
 
-### B. External Intelligence (Shodan)
+### B. Reconnaissance Data Sources
 
-| Metric | Detail |
+| Data Source | Status |
 | :---| :---|
-| Organization | `{shodan_data.get('org', 'N/A')}` |
-| Hostnames | `{', '.join(shodan_data.get('hostnames', ['N/A']))}` |
-| Tags | `{', '.join(shodan_data.get('tags', ['N/A']))}` |
-| Last Update | `{shodan_data.get('last_update', 'N/A')}` |
-| Reported CVEs | `{len(shodan_data.get('vulns', []))}` |
+{chr(10).join([f"| {api} | {status} |" for api, status in api_reports.items()]) if api_reports else "| No API Reports | N/A |"}
+
+**Primary Source Used:** {data_source}
 
 ### C. DNS Records
 
@@ -86,11 +97,22 @@ The following open ports were detected on the target IP:
 
 This section contains the full, raw JSON output from the tools used for detailed auditing.
 
-### Raw Nmap Output
+### Raw Unified Recon Output
 
 ```json
 {json.dumps(nmap_data, indent=2)}
+```
+
+### Raw API Reports & Source Info
+
+```json
 {json.dumps(shodan_data, indent=2)}
+```
+
+### Raw DNS Output
+
+```json
+{json.dumps(dns_data, indent=2)}
 ```
 """
     

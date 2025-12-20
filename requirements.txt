@@ -1,11 +1,12 @@
 # --- Core Recon ---
 python-nmap>=0.7.1
 dnspython>=2.6.1
-shodan>=1.31.0
+netlas>=0.4.0
+censys>=2.1.7
+requests>=2.31.0
 
 # --- AI & Logic ---
 ollama>=0.2.1
-requests>=2.31.0
 python-dotenv>=1.0.1
 
 # --- The "Pretty" Factor (CLI/GUI) ---

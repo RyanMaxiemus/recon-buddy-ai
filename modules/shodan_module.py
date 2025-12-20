@@ -52,7 +52,7 @@ def get_shodan_host_info(ip_address: str) -> dict:
 if __name__ == "__main__":
     # Reminder: Replace '8.8.8.8' with an IP you want to test!
     # A test IP like '207.241.147.219' (Shodan's own IP) often works well for demos.
-    test_ip = "8.8.8.8"
+    test_ip = "207.241.147.219"
 
     shodan_data = get_shodan_host_info(test_ip)
 

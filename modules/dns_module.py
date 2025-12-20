@@ -33,7 +33,7 @@ def run_dns_lookup(target: str) -> dict:
 
     if is_ip_address(target):
         # --- Revers Lookup (IP -> Domain) ---
-        log.info(f"    [DNS] Performing reverse lookup for IP: {target}")
+        log.info(f"✅ [DNS] Performing reverse lookup for IP: {target}")
         try:
             # 1. Convert IP to the special reverse format (e.g., 8.8.8.8 -> 8.8.8.8.in-addr.arpa)
             rev_name = dns.reversename.from_address(target)

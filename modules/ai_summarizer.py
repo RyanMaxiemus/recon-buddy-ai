@@ -17,8 +17,8 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
     Combines all recon data, generates a prompt, and requests a security summary from the Ollama AI model.
 
     Args:
-        nmap_data: A raw dictionary containing Nmap scan results.
-        shodan_data: A raw dictionary containing Shodan scan results.
+        nmap_data: A raw dictionary containing Nmap/unified scan results.
+        shodan_data: A dictionary containing source information and API reports (can be unified recon data).
         dns_data: A dictionary containing DNS lookup results.
 
     Returns:
@@ -37,9 +37,9 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
     # 2. Craft the System Prompt (This is the most critical part!)
     # This instructs the AI to adopt a persona and output a structured response.
     system_prompt = (
-        "You are an expert Cybersecurity Analyst specializing in threat analysis and vulnerability assessment."
-        "Your task is to analyze the following JSON data containing Nmap, Shodan, and DNS "
-        "reconaissance results for a single host. "
+        "You are an expert Cybersecurity Analyst specializing in threat analysis and vulnerability assessment. "
+        "Your task is to analyze the following JSON data containing network reconnaissance results from multiple sources "
+        "(unified recon may include data from Netlas, Criminal IP, Censys, and/or Nmap). "
         "Do not output the raw JSON data. Instead, provide a concise and actionable security summary "
         "in Markdown format. Your report must include the following sections:\n\n"
     )
@@ -50,21 +50,23 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
         "### 1. Host Identity & DNS\n"
         "State the primary IP and discovered hostnames/CNAMES.\n"
         "### 2. High-Priority Findings\n"
-        "List all open ports (especially HTTP/S, SSH, RDP) and any critical information from Shodan "
-        "(e.g., outdated software version, reported CVEs, 'vulnerable' tags).\n"
-        "### 3. Attack Surface Summary\n"
+        "List all open ports and critical information about the target (focus on HTTP/S, SSH, RDP, and other dangerous services). "
+        "Note any security concerns from the data sources used.\n"
+        "### 3. Data Sources & Confidence\n"
+        "List which data sources were queried and their results (Netlas, Criminal IP, Censys, Nmap). "
+        "Any data source failures are noted in api_reports.\n"
+        "### 4. Attack Surface Summary\n"
         "In one paragraph, summarize the most significant vulnerabilities or misconfigurations. "
-        "Which services are mostly exposed?\n"
-        "### 4. Next Steps (Actionable)\n"
-        "Provide 3-5 clear, prioritized steps the user should take next (e.g., 'Run an in-depth Nikto scan "
-        "on port 80', 'Check the SSH banner version against Mitre CVEs').\n\n"
+        "Which services are most exposed?\n"
+        "### 5. Next Steps (Actionable)\n"
+        "Provide 3-5 clear, prioritized steps the user should take next based on the findings.\n\n"
         "--- RAW RECON DATA ---\n"
         f"{data_string}"
     )
 
     try:
         # 4. Call the Ollama API using the modern library interface
-        log.info(f"    [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
+        log.info(f"✅ [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
         
         # Use the modern ollama library API (no OllamaClient needed)
         response = ollama.chat(
