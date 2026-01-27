@@ -18,13 +18,13 @@ def is_ip_address(target: str) -> bool:
             return True
         except AddressValueError:
             return False
-        
+
 def run_dns_lookup(target: str) -> dict:
     """
     Performs reverse and forward DNS lookup based on the target type (IP or Domain).
 
     Args:
-        target: The IP adress or domain name to query.
+        target: The IP address or domain name to query.
 
     Returns:
         A dictionary containing the results of the DNS lookups.
@@ -32,14 +32,14 @@ def run_dns_lookup(target: str) -> dict:
     results = {}
 
     if is_ip_address(target):
-        # --- Revers Lookup (IP -> Domain) ---
+        # --- Reverse Lookup (IP -> Domain) ---
         log.info(f"✅ [DNS] Performing reverse lookup for IP: {target}")
         try:
             # 1. Convert IP to the special reverse format (e.g., 8.8.8.8 -> 8.8.8.8.in-addr.arpa)
             rev_name = dns.reversename.from_address(target)
 
             # 2. Query the PTR (Pointer) record
-            answers  = dns.resolver.resolve(rev_name, 'PTR')
+            answers = dns.resolver.resolve(rev_name, 'PTR')
 
             # 3. Extract and clean the domain name
             results['reverse_hostnames'] = [str(r.target).rstrip('.') for r in answers]
@@ -47,7 +47,29 @@ def run_dns_lookup(target: str) -> dict:
         except dns.resolver.NoAnswer:
             results['reverse_hostnames'] = ["No PTR record found."]
         except Exception as e:
-            results['error'] = f"Forward DNS Error (A): {e}"
+            results['reverse_hostnames'] = [f"Reverse DNS Error: {e}"]
+
+    else:
+        # --- Forward Lookup (Domain -> IP) ---
+        log.info(f"✅ [DNS] Performing forward lookup for domain: {target}")
+
+        # A Record (IPv4)
+        try:
+            answers = dns.resolver.resolve(target, 'A')
+            results['ipv4_addresses'] = [str(r) for r in answers]
+        except dns.resolver.NoAnswer:
+            results['ipv4_addresses'] = ["No A record found."]
+        except Exception as e:
+            results['ipv4_addresses'] = [f"Forward DNS Error (A): {e}"]
+
+        # AAAA Record (IPv6)
+        try:
+            answers = dns.resolver.resolve(target, 'AAAA')
+            results['ipv6_addresses'] = [str(r) for r in answers]
+        except dns.resolver.NoAnswer:
+            results['ipv6_addresses'] = ["No AAAA record found."]
+        except Exception as e:
+            results['ipv6_addresses'] = [f"Forward DNS Error (AAAA): {e}"]
 
         # CNAME Record (Alias)
         try:
@@ -57,8 +79,25 @@ def run_dns_lookup(target: str) -> dict:
         except dns.resolver.NoAnswer:
             results['canonical_name'] = ["No CNAME record found."]
         except Exception as e:
-            # We don't want a CNAME error to crash the script if A is working.
-            pass
+            results['canonical_name'] = [f"CNAME Error: {e}"]
+
+        # MX Record (Mail Exchange)
+        try:
+            answers = dns.resolver.resolve(target, 'MX')
+            results['mx_records'] = [f"{r.preference} {str(r.exchange).rstrip('.')}" for r in answers]
+        except dns.resolver.NoAnswer:
+            results['mx_records'] = ["No MX record found."]
+        except Exception as e:
+            results['mx_records'] = [f"MX Error: {e}"]
+
+        # TXT Record
+        try:
+            answers = dns.resolver.resolve(target, 'TXT')
+            results['txt_records'] = [str(r).strip('"') for r in answers]
+        except dns.resolver.NoAnswer:
+            results['txt_records'] = ["No TXT record found."]
+        except Exception as e:
+            results['txt_records'] = [f"TXT Error: {e}"]
 
     return results
 

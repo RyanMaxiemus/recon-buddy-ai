@@ -39,35 +39,35 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
     system_prompt = (
         "You are an expert Cybersecurity Analyst specializing in threat analysis and vulnerability assessment. "
         "Your task is to analyze the following JSON data containing network reconnaissance results from multiple sources "
-        "(unified recon may include data from Netlas, Criminal IP, Censys, and/or Nmap). "
+        "(unified recon may include data from Shodan, Netlas, Criminal IP, Censys, and/or Nmap). "
         "Do not output the raw JSON data. Instead, provide a concise and actionable security summary "
         "in Markdown format. Your report must include the following sections:\n\n"
-    )
-    
-    # 3. Craft the User Prompt
-    user_prompt = (
-        f"{system_prompt}\n\n"
         "### 1. Host Identity & DNS\n"
         "State the primary IP and discovered hostnames/CNAMES.\n"
         "### 2. High-Priority Findings\n"
         "List all open ports and critical information about the target (focus on HTTP/S, SSH, RDP, and other dangerous services). "
-        "Note any security concerns from the data sources used.\n"
+        "If Shodan data is available, highlight organization, location, ISP, and any security tags or vulnerabilities.\n"
         "### 3. Data Sources & Confidence\n"
-        "List which data sources were queried and their results (Netlas, Criminal IP, Censys, Nmap). "
+        "List which data sources were queried and their results (Shodan, Netlas, Criminal IP, Censys, Nmap). "
         "Any data source failures are noted in api_reports.\n"
         "### 4. Attack Surface Summary\n"
         "In one paragraph, summarize the most significant vulnerabilities or misconfigurations. "
-        "Which services are most exposed?\n"
+        "Which services are most exposed? Include any CVEs or security tags from Shodan if available.\n"
         "### 5. Next Steps (Actionable)\n"
         "Provide 3-5 clear, prioritized steps the user should take next based on the findings.\n\n"
-        "--- RAW RECON DATA ---\n"
-        f"{data_string}"
+    )
+
+    # 3. Craft the User Prompt
+    user_prompt = (
+        f"--- RAW RECON DATA ---\n"
+        f"{data_string}\n\n"
+        f"Please analyze this reconnaissance data and provide a structured security assessment following the format specified in the system prompt."
     )
 
     try:
         # 4. Call the Ollama API using the modern library interface
         log.info(f"✅ [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
-        
+
         # Use the modern ollama library API (no OllamaClient needed)
         response = ollama.chat(
             model=OLLAMA_MODEL,
@@ -78,11 +78,11 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
         )
 
         return response['message']['content']
-    
+
     except Exception as e:
         # Log the full error later, but for now, return a helpful message.
         return f"❌ ERROR: Ollama summary failed. Is the Ollama server running and is the model '{OLLAMA_MODEL}' pulled? Details: {e}"
-    
+
 if __name__ == "__main__":
     # --- Example Usage (Requires Ollama server to be running) ---
     log.info("--- TESTING AI SUMMARIZER (Requires local Ollama server and model) ---")

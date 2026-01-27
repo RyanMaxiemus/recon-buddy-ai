@@ -3,18 +3,48 @@
 venv/
 env/
 
-# Dependency Files
-requirements.txt
-*wheel
+# Environment Variables
+.env
 
-# Project/Build Artifacts
+# Python Cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Project/Build Artifacts
 *.egg-info/
 build/
 dist/
-.env
+.eggs/
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # Operating System Files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Reports
+report_*.md
+report_*.html
+report_*.pdf
+
+# Temporary files
+*.tmp
+*.temp

@@ -1,68 +1,111 @@
-# 🕵️ Recon Buddy AI
+# 🚀 Recon Buddy AI
 
-> Automated recon for the modern security pro. Wraps Nmap, Shodan, and DNS utils into one Python tool, then uses AI to summarize the attack surface so you don't have to parse XML manually.
+> Automated reconnaissance and port scanning, summarized by a local AI model, so you can stop parsing raw terminal output.
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Status-In%20Development-yellow.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-green.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+[![Tech: Python](https://img.shields.io/badge/Tech-Python-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![AI: Ollama](https://img.shields.io/badge/AI-Ollama-000000?logo=ollama&logoColor=white)](https://ollama.com/)
 
-## 🤔 Why?
+---
 
-Because staring at raw Nmap XML output is a violation of the Geneva Convention. I wanted a tool that scans the target, grabs the low-hanging fruit (Shodan/DNS), and then uses an LLM to tell me, *"Hey, look at port 8080, it looks vulnerable,"* instead of me `grep`-ing through 5,000 lines of logs.
+## 🧐 What is this?
 
-## ✨ Features
+**Recon Buddy AI** is a command-line utility designed for modern security professionals and bug bounty hunters. It solves the problem of "recon fatigue" by consolidating data from multiple sources—including local Nmap scans and external APIs like Shodan, Netlas, Censys, and Criminal IP—into a single, unified report. The key differentiator is the integration of a local Large Language Model (LLM) via **Ollama** to analyze the raw findings and generate a concise, actionable security summary. Instead of sifting through pages of terminal output, you get a clear, prioritized attack surface analysis instantly.
 
--   **Nmap Integration:** Automated port scanning without the headache.
--   **DNS & Shodan:** Enriches IP data with hostnames and public vulnerability data.
--   **AI Analysis:** Uses Local LLMs (Ollama) or OpenAI to summarize findings.
--   **Reporting:** Generates clean Markdown/PDF reports. Manager-friendly.
+## 🛠️ Tech Stack
 
-## 🛠️ Installation
+- **Language:** Python 3.11+
+- **Recon:** `python-nmap`, `dnspython`, Shodan API, Netlas API, Censys API, Criminal IP API
+- **AI/LLM:** Ollama (default model: `llama3`)
+- **UI/Reporting:** `rich` (for beautiful terminal output), `markdown` (for report generation)
+- **Dependency Management:** Poetry
 
-1.  **Clone the repo:**
+## 🚀 Quick Start (Optimized for Ubuntu)
+
+This project requires **Nmap** and **Ollama** to be installed on your system.
+
+### Prerequisites
+
+1.  **Install Nmap:**
+
     ```bash
-    git clone https://github.com/RyanMaxiemus/recon-buddy-ai.git
-    cd project-name
+    sudo apt update
+    sudo apt install nmap -y
     ```
 
-2.  **Install dependencies:**
+2.  **Install Ollama and Pull Model:**
+    Follow the official instructions to install Ollama. Once installed, pull the default model (`llama3`):
     ```bash
-    pip install -r requirements.txt
+    curl -fsSL https://ollama.com/install.sh | sh
+    ollama pull llama3
     ```
+    > **Note:** Ollama must be running in the background (`ollama serve`) for the AI summary feature to work.
 
-3.  **Setup Keys (Optional but recommended):**
-    Create a `.env` file and add your keys:
-    ```env
-    SHODAN_API_KEY=your_key_here
-    OPENAI_API_KEY=your_key_here  # Only if not using Local LLM
-    ```
+### Installation
 
-## 🚀 Usage
-
-Basic scan:
-```bash
-python main.py --target 192.168.1.1 --scan-type quick
-````
-
-Generate a full report with AI summary:
+The project uses **Poetry** for dependency management.
 
 ```bash
-python main.py --target example.com --ai-summary --output report.md
+# Clone it
+git clone https://github.com/RyanMaxiemus/recon-buddy-ai.git
+cd recon-buddy-ai
+
+# Install Poetry (if you don't have it)
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
 ```
 
-## 🗺️ Roadmap
+### Configuration
 
-  - [x] **Core:** Nmap & DNS Module
-  - [x] **Intel:** Shodan API Integration
-  - [x] **Brain:** AI Summarizer (Local + Cloud support)
-  - [x] **Paperwork:** PDF/MD Report Generator
-  - [x] **Polish:** Logging & Error Handling
-  - [x] **UI:** CLI Beautification (Rich/Typer)
+Create a `.env` file in the project root to store your API keys. The tool will function without them, but the multi-source recon will be limited. Copy the example file and add your keys:
 
-## ⚠️ Disclaimer
+```bash
+cp .env.example .env
+# Edit .env with your actual API keys
+```
 
-**Do not scan targets you do not have permission to test.** The developer is not responsible if you use this tool to do something illegal and end up in a cell without Wi-Fi. Use responsibly.
+Example `.env` file:
+
+```ini
+# Primary source (most comprehensive)
+SHODAN_API_KEY="your_shodan_key"
+
+# Alternative sources (optional)
+NETLAS_API_KEY="your_netlas_key"
+CENSYS_API_ID="your_censys_id"
+CENSYS_API_SECRET="your_censys_secret"
+CRIMINAL_IP_API_KEY="your_criminal_ip_key"
+```
+
+**Note:** You don't need all API keys. The tool prioritizes sources in this order: Shodan → Netlas → Criminal IP → Censys → Nmap (fallback).
+
+### Run it
+
+Execute the main script, providing a target domain or IP address:
+
+```bash
+# Run it
+poetry run python main.py --target scanme.nmap.org
+```
+
+## 📸 Preview
+
+_(Placeholder for a screenshot or GIF of the terminal output)_
 
 ## 🤝 Contributing
 
-PRs are welcome. If you fix a bug, you're a legend. If you add a feature, please update the tests.
+Found a bug? Open an issue. Want to fix it? Send a PR. Let's make this better together.
+
+We welcome contributions of all kinds! Whether it's a new feature, a bug fix, or just improving the documentation, your help is appreciated.
+
+1.  **Fork** the repository.
+2.  **Clone** your fork: `git clone https://github.com/your-username/recon-buddy-ai.git`
+3.  **Create** a new branch: `git checkout -b feature/your-feature-name`
+4.  **Commit** your changes: `git commit -m 'feat: Add amazing new feature'`
+5.  **Push** to the branch: `git push origin feature/your-feature-name`
+6.  **Open a Pull Request** and describe your changes.
+
+We use **Poetry** for dependency management, so please ensure your environment is set up with `poetry install` before making changes. Thank you for making Recon Buddy AI better!

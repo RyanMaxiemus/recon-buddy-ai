@@ -33,11 +33,11 @@ def orchestrate_recon(target: str):
         TextColumn("[progress.description]{task.description}"),
         transient=True,
     ) as progress:
-        
+
         # 1. DNS Phase: Checking the ID at the door
         progress.add_task(description="[yellow]Fetching DNS records...", total=None)
         dns_results = run_dns_lookup(target)
-        
+
         # Resolve target to IP if user provided a domain
         scan_target_ip = target
         if not is_ip_address(target):
@@ -52,17 +52,18 @@ def orchestrate_recon(target: str):
         # 2. Initialize UnifiedRecon with API keys
         progress.add_task(description="[cyan]Initializing multi-source recon...", total=None)
         api_keys = {
+            'shodan': os.getenv('SHODAN_API_KEY'),
             'netlas': os.getenv('NETLAS_API_KEY'),
             'censys_id': os.getenv('CENSYS_API_ID'),
             'censys_secret': os.getenv('CENSYS_API_SECRET'),
             'criminal_ip': os.getenv('CRIMINAL_IP_API_KEY')
         }
         unified_recon = UnifiedRecon(api_keys)
-        
+
         # 3. Unified Recon Phase: Query all sources in priority order
         progress.add_task(description="[green]Querying multiple reconnaissance sources...", total=None)
         unified_results = unified_recon.get_ip_info(scan_target_ip, allow_nmap=True)
-        
+
         # Convert ports to nmap-like format for compatibility
         nmap_results = {
             "scan": {
@@ -73,14 +74,15 @@ def orchestrate_recon(target: str):
                 }
             }
         }
-        
+
         # Format api_reports as shodan-like data for compatibility
         shodan_results = {
-            "org": "Unknown",
+            "org": unified_results.get("shodan_data", {}).get("org", "Unknown") if unified_results.get("shodan_data") else "Unknown",
             "api_reports": unified_results.get("api_reports", {}),
-            "source_info": unified_results.get("source", "Multiple")
+            "source_info": unified_results.get("source", "Multiple"),
+            "shodan_data": unified_results.get("shodan_data", {})
         }
-        
+
         # 4. AI Phase: The 'Brain' work
         progress.add_task(description="[magenta]AI is analyzing data (Ollama)...", total=None)
         ai_summary = create_ai_summary(nmap_results, shodan_results, dns_results)
@@ -90,14 +92,14 @@ def orchestrate_recon(target: str):
     table = Table(title=f"Intel Summary: {target}", show_header=True, header_style="bold cyan")
     table.add_column("Category", style="dim")
     table.add_column("Result")
-    
+
     table.add_row("Primary IP", scan_target_ip)
     table.add_row("Data Source", unified_results.get('source', 'Unknown'))
-    
+
     # Extract port list for the table
     ports = unified_results.get("ports", [])
     table.add_row("Open Ports", ", ".join(map(str, ports)) if ports else "[red]None Detected[/red]")
-    
+
     console.print(table)
     console.print(Panel(ai_summary, title="[bold gold1]AI Security Insight[/bold gold1]", border_style="gold1"))
 
@@ -106,7 +108,7 @@ def orchestrate_recon(target: str):
     success = generate_markdown_report(
         target, nmap_results, shodan_results, dns_results, ai_summary, report_name
     )
-    
+
     if success:
         console.print(f"\n[bold green]Success![/bold green] Report saved to: [underline]{report_name}[/underline]")
         log.info(f"Report generated: {report_name}")
