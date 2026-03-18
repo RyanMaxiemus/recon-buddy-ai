@@ -1,9 +1,11 @@
 import json
 import logging
+import os
 from datetime import datetime
 
 # Get the logger instance from the root logging setup
 log = logging.getLogger("RECON.Reporter")
+
 
 def format_nmap_ports(nmap_dict: dict) -> str:
     """
@@ -11,7 +13,7 @@ def format_nmap_ports(nmap_dict: dict) -> str:
     """
     # Initialize the table header
     table_content = "| Port | Protocol | State | Service | Version |\n"
-    table_content += "|------|----------|-------|---------|---------|\n"
+    table_content += "|------|----------|-------|---------|--------|\n"
 
     try:
         # Nmap results are often nested under the IP key
@@ -52,108 +54,6 @@ def format_nmap_ports(nmap_dict: dict) -> str:
 
     return table_content
 
-def generate_markdown_report(target: str, nmap_data: dict, shodan_data: dict, dns_data: dict, ai_summary: str, output_path: str) -> bool:
-    """
-    Creates the final structured Markdown report file.
-    Now supports unified recon data with full Shodan integration.
-    """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Extract primary IP from nmap_data (unified recon format)
-    primary_ip = "N/A"
-    for host in nmap_data.get('scan', {}).keys():
-        primary_ip = host
-        break
-
-    # Extract data source information
-    data_source = shodan_data.get('source_info', 'Multiple Sources')
-    api_reports = shodan_data.get('api_reports', {})
-    api_status_str = ", ".join([f"{api}: {status}" for api, status in api_reports.items()])
-
-    # Extract Shodan-specific data if available
-    shodan_info = shodan_data.get('shodan_data', {})
-
-    # --- 1. Assemble the Report Sections ---
-
-    # 1.1 Header and Metadata
-    report_content = f"""# Reconnaissance and Analysis Report: {target}
-
-* **Target:** `{target}`
-* **Primary IP:** `{primary_ip}`
-* **Data Source:** {data_source}
-* **Report Generated:** {timestamp}
-
-## 🧠 AI-Generated Security Summary
-
-{ai_summary}
-
----
-
-## 🔎 Technical Findings
-
-### A. Network Footprint (Unified Recon)
-
-The following open ports were detected on the target IP:
-
-{format_nmap_ports(nmap_data)}
-
-### B. Reconnaissance Data Sources
-
-| Data Source | Status |
-| :---| :---|
-{chr(10).join([f"| {api} | {status} |" for api, status in api_reports.items()]) if api_reports else "| No API Reports | N/A |"}
-
-**Primary Source Used:** {data_source}
-
-### C. Host Intelligence (Shodan Data)
-
-{format_shodan_data(shodan_info) if shodan_info else "No Shodan data available."}
-
-### D. DNS Records
-
-| Record Type | Data |
-| :---| :---|
-| IPv4 Addresses | `{', '.join(dns_data.get('ipv4_addresses', ['N/A']))}` |
-| IPv6 Addresses | `{', '.join(dns_data.get('ipv6_addresses', ['N/A']))}` |
-| Hostnames (PTR) | `{', '.join(dns_data.get('reverse_hostnames', ['N/A']))}` |
-| Canonical Name (CNAME) | `{', '.join(dns_data.get('canonical_name', ['N/A']))}` |
-| Mail Exchange (MX) | `{', '.join(dns_data.get('mx_records', ['N/A']))}` |
-| TXT Records | `{', '.join(dns_data.get('txt_records', ['N/A'])[:3])}{'...' if len(dns_data.get('txt_records', [])) > 3 else ''}` |
-
----
-
-## 💾 Raw Data Dump (For Auditing)
-
-This section contains the full, raw JSON output from the tools used for detailed auditing.
-
-### Raw Unified Recon Output
-
-```json
-{json.dumps(nmap_data, indent=2)}
-```
-
-### Raw API Reports & Source Info
-
-```json
-{json.dumps(shodan_data, indent=2)}
-```
-
-### Raw DNS Output
-
-```json
-{json.dumps(dns_data, indent=2)}
-```
-"""
-
-    # --- 2. Write to File ---
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(report_content)
-        log.info(f"✅ Markdown Report successfully saved to: {output_path}")
-        return True
-    except Exception as e:
-        log.critical(f"❌ Failed to write Markdown report file to {output_path}. Error: {e}")
-        return False
 
 def format_shodan_data(shodan_info: dict) -> str:
     """
@@ -203,3 +103,125 @@ def format_shodan_data(shodan_info: dict) -> str:
         content += f"| Last Update | {shodan_info['last_update']} |\n"
 
     return content
+
+
+def generate_markdown_report(target: str, nmap_data: dict, shodan_data: dict, dns_data: dict, ai_summary: str, output_filename: str, output_dir: str = "reports") -> bool:
+    """
+    Creates the final structured Markdown report file.
+    Now supports unified recon data with full Shodan integration.
+
+    Args:
+        target: The original target (domain or IP).
+        nmap_data: Unified recon data in nmap-like format.
+        shodan_data: Source info, API reports, and Shodan host intel.
+        dns_data: DNS lookup results.
+        ai_summary: The AI-generated security summary.
+        output_filename: The report filename (e.g., report_example_com_20260317.md).
+        output_dir: Directory to write the report to (default: reports/).
+
+    Returns:
+        True if the report was written successfully, False otherwise.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Extract primary IP from nmap_data (unified recon format)
+    primary_ip = "N/A"
+    for host in nmap_data.get('scan', {}).keys():
+        primary_ip = host
+        break
+
+    # Extract data source information
+    data_source = shodan_data.get('source_info', 'Multiple Sources')
+    api_reports = shodan_data.get('api_reports', {})
+
+    # Extract Shodan-specific data if available
+    shodan_info = shodan_data.get('shodan_data', {})
+
+    # --- 1. Assemble the Report Sections ---
+
+    # 1.1 Header and Metadata
+    report_content = f"""# Reconnaissance and Analysis Report: {target}
+
+* **Target:** `{target}`
+* **Primary IP:** `{primary_ip}`
+* **Data Source:** {data_source}
+* **Report Generated:** {timestamp}
+
+## 🧠 AI-Generated Security Summary
+
+{ai_summary}
+
+---
+
+## 🔎 Technical Findings
+
+### A. Network Footprint (Unified Recon)
+
+The following open ports were detected on the target IP:
+
+{format_nmap_ports(nmap_data)}
+
+### B. Reconnaissance Data Sources
+
+| Data Source | Status |
+| :---| :---|
+{chr(10).join([f"| {api} | {status} |" for api, status in api_reports.items()]) if api_reports else "| No API Reports | N/A |"}
+
+**Primary Source Used:** {data_source}
+
+### C. Host Intelligence (Shodan Data)
+
+{format_shodan_data(shodan_info) if shodan_info else "No Shodan data available."}
+
+### D. DNS Records
+
+| Record Type | Data |
+| :---| :---|
+| IPv4 Addresses | `{', '.join(dns_data.get('ipv4_addresses', ['N/A'])) or 'N/A'}` |
+| IPv6 Addresses | `{', '.join(dns_data.get('ipv6_addresses', ['N/A'])) or 'N/A'}` |
+| Hostnames (PTR) | `{', '.join(dns_data.get('reverse_hostnames', ['N/A'])) or 'N/A'}` |
+| Canonical Name (CNAME) | `{', '.join(dns_data.get('canonical_name', ['N/A'])) or 'N/A'}` |
+| Mail Exchange (MX) | `{', '.join(dns_data.get('mx_records', ['N/A'])) or 'N/A'}` |
+| TXT Records | `{', '.join(dns_data.get('txt_records', ['N/A'])[:3]) or 'N/A'}{'...' if len(dns_data.get('txt_records', [])) > 3 else ''}` |
+
+---
+
+## 💾 Raw Data Dump (For Auditing)
+
+This section contains the full, raw JSON output from the tools used for detailed auditing.
+
+### Raw Unified Recon Output
+
+```json
+{json.dumps(nmap_data, indent=2)}
+```
+
+### Raw API Reports & Source Info
+
+```json
+{json.dumps(shodan_data, indent=2)}
+```
+
+### Raw DNS Output
+
+```json
+{json.dumps(dns_data, indent=2)}
+```
+"""
+
+    # --- 2. Write to File ---
+    try:
+        # Ensure the output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        log.info(f"✅ Markdown Report successfully saved to: {output_path}")
+        return True
+    except OSError as e:
+        log.critical(f"❌ Failed to create output directory {output_dir}. Error: {e}")
+        return False
+    except Exception as e:
+        log.critical(f"❌ Failed to write Markdown report file. Error: {e}")
+        return False

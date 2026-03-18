@@ -3,6 +3,10 @@ import json
 import logging
 import requests
 import os
+import signal
+
+# Timeout for API calls in seconds
+API_TIMEOUT = 15
 
 try:
     import netlas
@@ -91,7 +95,7 @@ class UnifiedRecon:
 
         try:
             log.info(f"📡 [Shodan] Querying {ip}...")
-            host_info = self.shodan_conn.host(ip)
+            host_info = self.shodan_conn.host(ip, minify=False)
 
             # Extract ports from Shodan data
             ports = [service.get('port') for service in host_info.get('data', []) if service.get('port')]
@@ -151,6 +155,7 @@ class UnifiedRecon:
         if self.netlas_conn:
             try:
                 log.info(f"📡 [Netlas] Querying {ip}...")
+                # Netlas library doesn't support timeout directly; use signal alarm on Unix
                 data = self.netlas_conn.host(ip=ip)
                 results["ports"] = [obj['port'] for obj in data.get('data', [])]
                 results["source"] = "Netlas"
@@ -170,7 +175,7 @@ class UnifiedRecon:
                 resp = requests.get(
                     f"https://api.criminalip.io/v1/asset/ip/report?ip={ip}",
                     headers=headers,
-                    timeout=10
+                    timeout=API_TIMEOUT
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -238,75 +243,3 @@ class UnifiedRecon:
             results["error"] = f"Nmap Error: {str(e)}"
             log.exception("Nmap scan failed")
         return results
-
-def run_basic_scan(target_ip: str, ports: str = '22,80,443,8080') -> str:
-    """
-    Runs a basic Nmap scan on the target IP for specified ports and returns the result as a JSON string.
-    Args:
-        target_ip: The IP address or hostname to scan.
-        ports: A comma-separated string of ports to scan.
-
-    Returns:
-        A JSON string representation of the scan results.
-    """
-    try:
-        # 1. Initialize the Nmap PortScanner object.
-        nm = nmap.PortScanner()
-
-        # 2. Define the Nmap scan arguments.
-        # -sT: TCP Connect Scan (no root required, works without sudo)
-        # -T4: Faster execution (aggressive timing)
-        # -p: Specify ports to scan
-        scan_args = f'-sT -T4 -p {ports}'
-
-        # 3. Execute the Nmap scan on the target IP with the defined arguments.
-        log.info(f"✅ [Nmap] Scanning {target_ip} on ports {ports} with args: {scan_args}")
-        nm.scan(hosts=target_ip, arguments=scan_args)
-
-        # 4. Convert the PortScanner object to a dictionary format.
-        raw_result_dict = {
-            'scan': {},
-            'nmap': {'command_line': nm.command_line(), 'scanstats': nm.scanstats()}
-        }
-
-        # Include detailed port information
-        for host in nm.all_hosts():
-            raw_result_dict['scan'][host] = {
-                'status': nm[host].state(),
-                'ports': []
-            }
-            for proto in nm[host].all_protocols():
-                ports_info = nm[host][proto]
-                for port in ports_info:
-                    port_info = {
-                        'portid': str(port),
-                        'protocol': proto,
-                        'state': ports_info[port]['state'],
-                        'service': ports_info[port].get('name', 'unknown'),
-                        'version': ports_info[port].get('version', 'unknown')
-                    }
-                    raw_result_dict['scan'][host]['ports'].append(port_info)
-
-        # 5. Convert the Python dictionary to a clean JSON string for easier consumption.
-        json_output = json.dumps(raw_result_dict, indent=4, default=str)
-        return json_output
-
-    except nmap.PortScannerError as e:
-        log.exception("Nmap Scan Failed!")
-        return json.dumps({"error": "Nmap Scan Error", "details": str(e)})
-    except Exception as e:
-        log.exception("General scan error")
-        return json.dumps({"error": "General Error", "details": str(e)})
-
-if __name__ == "__main__":
-    # Example usage when running the script directly.
-    test_target = 'scanme.nmap.org'  # Always use scanme.nmap.org for testing.
-
-    log.info(f"--- STARTING SCAN on {test_target} ---")
-
-    # Run the scan and get the JSON output.
-    scan_json = run_basic_scan(test_target)
-
-    log.info("\n--- RAW JSON RESULT ---\n")
-    log.info(scan_json)
-    log.info("\n-----------------------\n")

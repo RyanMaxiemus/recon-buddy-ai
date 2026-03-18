@@ -1,16 +1,51 @@
 import ollama
 import json
 import logging
+import os
 
 # Get a module-specific logger instance
-log = logging.getLogger("RECON.Scanner")# <-- Use a hierarchical name (e.g., RECON.Scanner)
-# This will inherit the setup from the root logger configured in main.py
+log = logging.getLogger("RECON.AI")
 
-# IMPORTANT PREREQUISITE:
-# You must have Ollama installed and running (ollama serve)
-# AND you must have a model pulled, e.g., "ollama pull llama3"
-OLLAMA_MODEL = "llama3" # Or 'mistral', 'gemma', etc. Choose one you have pulled.
-OLLAMA_HOST = "http://localhost:11434" # Default host for Ollama server
+# Configuration from environment variables with sensible defaults
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "kimi-k2.5:cloud")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+# Maximum characters to send to the LLM to avoid context window overflow
+MAX_LLM_PAYLOAD_CHARS = 12000
+
+
+def _prepare_data_for_llm(combined_data: dict) -> str:
+    """
+    Strips bulky raw data (Shodan raw_data, long banners) from the combined
+    recon results to keep the LLM prompt within context window limits.
+
+    Args:
+        combined_data: The full combined recon dictionary.
+
+    Returns:
+        A truncated JSON string safe for LLM consumption.
+    """
+    # Deep-copy-light: work on a pruned version
+    pruned = {}
+
+    for key, value in combined_data.items():
+        if isinstance(value, dict):
+            pruned[key] = {
+                k: v for k, v in value.items()
+                if k not in ("raw_data", "raw_response")
+            }
+        else:
+            pruned[key] = value
+
+    data_string = json.dumps(pruned, indent=2, default=str)
+
+    # Hard truncation if still too large
+    if len(data_string) > MAX_LLM_PAYLOAD_CHARS:
+        data_string = data_string[:MAX_LLM_PAYLOAD_CHARS] + "\n... [TRUNCATED — data exceeded context limit]"
+        log.warning(f"⚠️ [AI] Payload truncated to {MAX_LLM_PAYLOAD_CHARS} chars to fit LLM context window.")
+
+    return data_string
+
 
 def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str:
     """
@@ -31,8 +66,8 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
         "dns": dns_data
     }
 
-    # Use JSON.dumps to make sure the data is safely formatted for the LLM.
-    data_string = json.dumps(combined_data, indent=2)
+    # Prepare a trimmed payload for the LLM
+    data_string = _prepare_data_for_llm(combined_data)
 
     # 2. Craft the System Prompt (This is the most critical part!)
     # This instructs the AI to adopt a persona and output a structured response.
@@ -79,9 +114,19 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str
 
         return response['message']['content']
 
+    except ConnectionError as e:
+        log.error(f"❌ [AI] Cannot connect to Ollama server at {OLLAMA_HOST}: {e}")
+        return f"❌ ERROR: Cannot connect to Ollama server at {OLLAMA_HOST}. Is 'ollama serve' running?"
+    except KeyError as e:
+        log.error(f"❌ [AI] Unexpected response format from Ollama: {e}")
+        return f"❌ ERROR: Ollama returned an unexpected response. Model '{OLLAMA_MODEL}' may not be compatible."
     except Exception as e:
-        # Log the full error later, but for now, return a helpful message.
+        error_msg = str(e)
+        if "model" in error_msg.lower() and "not found" in error_msg.lower():
+            return f"❌ ERROR: Model '{OLLAMA_MODEL}' not found. Run 'ollama pull {OLLAMA_MODEL}' first."
+        log.exception("Unexpected error during AI summarization")
         return f"❌ ERROR: Ollama summary failed. Is the Ollama server running and is the model '{OLLAMA_MODEL}' pulled? Details: {e}"
+
 
 if __name__ == "__main__":
     # --- Example Usage (Requires Ollama server to be running) ---

@@ -4,7 +4,7 @@ import logging
 from ipaddress import IPv4Address, IPv6Address, AddressValueError
 
 # Get a module-specific logger instance
-log = logging.getLogger("RECON.Scanner") # <-- Use a hierarchical name (e.g., RECON.Scanner)
+log = logging.getLogger("RECON.DNS")
 # This will inherit the setup from the root logger configured in main.py
 
 def is_ip_address(target: str) -> bool:
@@ -30,6 +30,7 @@ def run_dns_lookup(target: str) -> dict:
         A dictionary containing the results of the DNS lookups.
     """
     results = {}
+    errors = []
 
     if is_ip_address(target):
         # --- Reverse Lookup (IP -> Domain) ---
@@ -58,18 +59,22 @@ def run_dns_lookup(target: str) -> dict:
             answers = dns.resolver.resolve(target, 'A')
             results['ipv4_addresses'] = [str(r) for r in answers]
         except dns.resolver.NoAnswer:
-            results['ipv4_addresses'] = ["No A record found."]
+            results['ipv4_addresses'] = []
+            errors.append("No A record found.")
         except Exception as e:
-            results['ipv4_addresses'] = [f"Forward DNS Error (A): {e}"]
+            results['ipv4_addresses'] = []
+            errors.append(f"Forward DNS Error (A): {e}")
 
         # AAAA Record (IPv6)
         try:
             answers = dns.resolver.resolve(target, 'AAAA')
             results['ipv6_addresses'] = [str(r) for r in answers]
         except dns.resolver.NoAnswer:
-            results['ipv6_addresses'] = ["No AAAA record found."]
+            results['ipv6_addresses'] = []
+            errors.append("No AAAA record found.")
         except Exception as e:
-            results['ipv6_addresses'] = [f"Forward DNS Error (AAAA): {e}"]
+            results['ipv6_addresses'] = []
+            errors.append(f"Forward DNS Error (AAAA): {e}")
 
         # CNAME Record (Alias)
         try:
@@ -77,28 +82,36 @@ def run_dns_lookup(target: str) -> dict:
             # CNAME points to another domain, not an IP
             results['canonical_name'] = [str(r.target).rstrip('.') for r in answers]
         except dns.resolver.NoAnswer:
-            results['canonical_name'] = ["No CNAME record found."]
+            results['canonical_name'] = []
+            errors.append("No CNAME record found.")
         except Exception as e:
-            results['canonical_name'] = [f"CNAME Error: {e}"]
+            results['canonical_name'] = []
+            errors.append(f"CNAME Error: {e}")
 
         # MX Record (Mail Exchange)
         try:
             answers = dns.resolver.resolve(target, 'MX')
             results['mx_records'] = [f"{r.preference} {str(r.exchange).rstrip('.')}" for r in answers]
         except dns.resolver.NoAnswer:
-            results['mx_records'] = ["No MX record found."]
+            results['mx_records'] = []
+            errors.append("No MX record found.")
         except Exception as e:
-            results['mx_records'] = [f"MX Error: {e}"]
+            results['mx_records'] = []
+            errors.append(f"MX Error: {e}")
 
         # TXT Record
         try:
             answers = dns.resolver.resolve(target, 'TXT')
             results['txt_records'] = [str(r).strip('"') for r in answers]
         except dns.resolver.NoAnswer:
-            results['txt_records'] = ["No TXT record found."]
+            results['txt_records'] = []
+            errors.append("No TXT record found.")
         except Exception as e:
-            results['txt_records'] = [f"TXT Error: {e}"]
+            results['txt_records'] = []
+            errors.append(f"TXT Error: {e}")
 
+    if errors:
+        results['errors'] = errors
     return results
 
 if __name__ == "__main__":

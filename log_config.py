@@ -17,6 +17,10 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO) # Set the minimum level for all handlers
 
+    # Prevent duplicate handlers if setup_logging() is called more than once
+    if logger.handlers:
+        return logging.getLogger("RECON")
+
     # 3. Define the formatters
     # Detailed format for the log file (includes timestamp and source)
     file_formatter = logging.Formatter(
@@ -25,7 +29,7 @@ def setup_logging():
     )
     # Simple format for console (less cluttered)
     console_formatter = logging.Formatter(
-        '[%-8s] - %(message)s'
+        '[%(levelname)-8s] - %(message)s'
     )
 
     # 4. File Handler (writes logs to a file)
