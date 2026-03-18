@@ -2,96 +2,97 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime
-from ipaddress import ip_address, AddressValueError
+from ipaddress import ip_address, ip_network, AddressValueError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
 # UI & Logging
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
 from log_config import setup_logging
 
 # Custom Modules
 from modules.scanner import UnifiedRecon
 from modules.dns_module import run_dns_lookup, is_ip_address
 from modules.ai_summarizer import create_ai_summary
-from modules.reporter import generate_markdown_report
+from modules.reporter import generate_report
+from modules.vuln_lookup import VulnLookup
+from modules.history import ScanHistory
+from modules.notifiers import NotificationManager
 
 # --- Initialization ---
 load_dotenv()
 console = Console()
 log = setup_logging()
 
-# Valid domain regex (RFC 1035 compliant, reasonably strict)
+# Valid domain regex
 _DOMAIN_RE = re.compile(
     r'^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$'
 )
 
 
 def validate_target(target: str) -> bool:
-    """
-    Validates that the target is a legitimate IPv4/IPv6 address or domain name.
-    Rejects anything that could be used for injection or is nonsensical.
-
-    Args:
-        target: The user-provided target string.
-
-    Returns:
-        True if valid, False otherwise.
-    """
-    # Strip whitespace
+    """Validates that the target is a legitimate IPv4/IPv6 address, CIDR, or domain name."""
     target = target.strip()
-
-    if not target:
-        return False
-
-    # Check if it's a valid IP address
+    if not target: return False
+    if '/' in target:
+        try:
+            ip_network(target, strict=False)
+            return True
+        except (ValueError, AddressValueError): pass
     try:
         ip_address(target)
         return True
-    except (AddressValueError, ValueError):
-        pass
-
-    # Check if it's a valid domain name
-    if _DOMAIN_RE.match(target):
-        return True
-
+    except (AddressValueError, ValueError): pass
+    if _DOMAIN_RE.match(target): return True
     return False
 
 
-def orchestrate_recon(target: str, output_dir: str = "reports"):
-    """The central nervous system of the recon operation."""
-    console.print(Panel.fit("🕵️ [bold cyan]AI RECON ORCHESTRATOR[/bold cyan]", border_style="magenta"))
-    log.info(f"Session started for target: {target}")
+def get_all_targets(target_arg=None, targets_file=None):
+    """Parses CLI arguments and files to returns a flat list of unique targets."""
+    targets = []
+    if target_arg:
+        if '/' in target_arg:
+            try:
+                network = ip_network(target_arg.strip(), strict=False)
+                targets.extend([str(ip) for ip in list(network)[:256]])
+            except ValueError: targets.append(target_arg.strip())
+        else: targets.append(target_arg.strip())
 
-    # Use 'with Progress' to handle the sleek status bars
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
+    if targets_file and os.path.exists(targets_file):
+        try:
+            with open(targets_file, 'r') as f:
+                for line in f:
+                    t = line.strip()
+                    if t and not t.startswith('#'):
+                        if validate_target(t):
+                            if '/' in t:
+                                network = ip_network(t, strict=False)
+                                targets.extend([str(ip) for ip in list(network)[:256]])
+                            else: targets.append(t)
+        except Exception as e: log.error(f"Error reading targets file: {e}")
 
-        # 1. DNS Phase: Checking the ID at the door
-        progress.add_task(description="[yellow]Fetching DNS records...", total=None)
+    return list(dict.fromkeys(targets))
+
+
+def scan_single_target(target, output_dir, report_format, history_manager, notifier_manager, json_mode=False):
+    """Performs the full recon flow for a single target string."""
+    if not json_mode: log.info(f"Scanning target: {target}")
+    
+    try:
+        # 1. DNS Phase
         dns_results = run_dns_lookup(target)
-
-        # Resolve target to IP if user provided a domain
         scan_target_ip = target
         if not is_ip_address(target):
             if dns_results.get('ipv4_addresses'):
                 scan_target_ip = dns_results['ipv4_addresses'][0]
-                log.info(f"Resolved {target} to {scan_target_ip}")
-            else:
-                log.error(f"DNS failure for {target}")
-                dns_errors = dns_results.get('errors', [])
-                error_detail = f" ({'; '.join(dns_errors)})" if dns_errors else ""
-                console.print(f"[bold red]Error:[/bold red] Could not resolve {target}{error_detail}")
-                return
+            else: return f"❌ {target}: DNS Failure"
 
-        # 2. Initialize UnifiedRecon with API keys
-        progress.add_task(description="[cyan]Initializing multi-source recon...", total=None)
+        # 2. Unified Recon
         api_keys = {
             'shodan': os.getenv('SHODAN_API_KEY'),
             'netlas': os.getenv('NETLAS_API_KEY'),
@@ -100,23 +101,18 @@ def orchestrate_recon(target: str, output_dir: str = "reports"):
             'criminal_ip': os.getenv('CRIMINAL_IP_API_KEY')
         }
         unified_recon = UnifiedRecon(api_keys)
-
-        # 3. Unified Recon Phase: Query all sources in priority order
-        progress.add_task(description="[green]Querying multiple reconnaissance sources...", total=None)
         unified_results = unified_recon.get_ip_info(scan_target_ip, allow_nmap=True)
 
-        # Convert ports to nmap-like format for compatibility
         nmap_results = {
             "scan": {
                 scan_target_ip: {
                     "status": "up",
-                    "ports": [{"portid": str(p), "protocol": "tcp", "state": "open"} for p in unified_results.get("ports", [])],
+                    "ports": [{"portid": str(p), "protocol": "tcp", "state": "open", "service": "unknown", "version": "N/A"} for p in unified_results.get("ports", [])],
                     "source": unified_results.get("source", "Multiple")
                 }
             }
         }
 
-        # Format api_reports as shodan-like data for compatibility
         shodan_results = {
             "org": unified_results.get("shodan_data", {}).get("org", "Unknown") if unified_results.get("shodan_data") else "Unknown",
             "api_reports": unified_results.get("api_reports", {}),
@@ -124,66 +120,158 @@ def orchestrate_recon(target: str, output_dir: str = "reports"):
             "shodan_data": unified_results.get("shodan_data", {})
         }
 
-        # 4. AI Phase: The 'Brain' work
-        progress.add_task(description="[magenta]AI is analyzing data (Ollama)...", total=None)
-        ai_summary = create_ai_summary(nmap_results, shodan_results, dns_results)
+        # 3. Vulnerability Lookup Phase (NVD)
+        vuln_lookup = VulnLookup(api_key=os.getenv('NVD_API_KEY'))
+        port_list = nmap_results["scan"][scan_target_ip]["ports"]
+        vuln_data = vuln_lookup.lookup_ports(port_list)
+        
+        # 4. History & Diff Phase
+        last_scan = history_manager.get_last_scan(target)
+        diff = None
+        if last_scan:
+            current_scan = {'recon_data': nmap_results, 'vuln_data': vuln_data}
+            diff = history_manager.diff_scans(last_scan, current_scan)
+        
+        # 5. AI Phase
+        ai_summary = create_ai_summary(nmap_results, shodan_results, dns_results, vuln_data)
 
-    # --- CLI RESULTS SUMMARY ---
-    # Give the user some instant gratification before they open the report
-    table = Table(title=f"Intel Summary: {target}", show_header=True, header_style="bold cyan")
-    table.add_column("Category", style="dim")
-    table.add_column("Result")
+        # 6. Reporting Phase
+        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_base = f"report_{target.replace('.', '_').replace('/', '_')}_{timestamp_str}"
+        generate_report(target, nmap_results, shodan_results, dns_results, ai_summary, report_base, output_dir, report_format, vuln_data, diff)
+        
+        # 7. Save to History
+        history_manager.save_scan(target, dns_results, nmap_results, vuln_data, ai_summary)
+        
+        # 8. Notifications
+        ports_count = len(unified_results.get("ports", []))
+        vuln_count = sum(len(v) for v in vuln_data.values())
+        has_changes = diff['has_changes'] if diff else False
+        notifier_manager.notify_scan_complete(target, ports_count, vuln_count, has_changes)
+        
+        if json_mode:
+            return {
+                "target": target,
+                "status": "success",
+                "ports_count": ports_count,
+                "vuln_count": vuln_count,
+                "has_changes": has_changes,
+                "report_base": report_base
+            }
+        
+        diff_status = " (Changes detected!)" if has_changes else ""
+        return f"✅ {target}: Success ({ports_count} ports, {vuln_count} CVEs){diff_status}"
 
-    table.add_row("Primary IP", scan_target_ip)
-    table.add_row("Data Source", unified_results.get('source', 'Unknown'))
+    except Exception as e:
+        log.error(f"Error scanning {target}: {e}")
+        error_msg = f"❌ {target}: Error: {str(e)}"
+        return {"target": target, "status": "error", "error": str(e)} if json_mode else error_msg
 
-    # Extract port list for the table
-    ports = unified_results.get("ports", [])
-    table.add_row("Open Ports", ", ".join(map(str, ports)) if ports else "[red]None Detected[/red]")
 
+def orchestrate_recon(target_arg, targets_file, output_dir, report_format, concurrency, notify_list, json_mode=False):
+    """Orchestrates scans across multiple targets in parallel."""
+    history_manager = ScanHistory()
+    notifier_manager = NotificationManager(notify_list)
+    targets = get_all_targets(target_arg, targets_file)
+    if not targets:
+        if json_mode:
+            print(json.dumps({"status": "error", "message": "No valid targets found."}))
+        else:
+            console.print("[bold red]Error:[/bold red] No valid targets found.")
+        return
+
+    if not json_mode:
+        console.print(Panel.fit(
+            f"🕵️ [bold cyan]AI RECON CAMPAIGN[/bold cyan]\n[dim]Targets: {len(targets)} | Concurrency: {concurrency} | Notify: {','.join(notify_list) or 'None'}[/dim]", 
+            border_style="magenta"
+        ))
+
+    results = []
+    
+    if json_mode:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            future_to_target = {executor.submit(scan_single_target, t, output_dir, report_format, history_manager, notifier_manager, True): t for t in targets}
+            for future in as_completed(future_to_target):
+                results.append(future.result())
+        print(json.dumps(results, indent=2))
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        transient=False,
+    ) as progress:
+        main_task = progress.add_task("[bold white]Recon Progress", total=len(targets))
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            future_to_target = {executor.submit(scan_single_target, t, output_dir, report_format, history_manager, notifier_manager, False): t for t in targets}
+            for future in as_completed(future_to_target):
+                result = future.result()
+                results.append(result)
+                progress.update(main_task, advance=1, description=f"[cyan]Last: {str(result).split(':')[0]}")
+
+    console.print("\n[bold]Campaign Results Summary:[/bold]")
+    table = Table(show_header=True, header_style="bold blue")
+    table.add_column("Status", width=4)
+    table.add_column("Target")
+    table.add_column("Outcome")
+    for res in results:
+        status = "[green]OK[/green]" if "✅" in str(res) else "[red]ERR[/red]"
+        parts = str(res).split(': ', 1)
+        table.add_row(status, parts[0].replace('✅ ', '').replace('❌ ', ''), parts[1] if len(parts) > 1 else "Unknown")
     console.print(table)
-    console.print(Panel(ai_summary, title="[bold gold1]AI Security Insight[/bold gold1]", border_style="gold1"))
 
-    # 5. Reporting Phase: Writing it down for posterity
-    report_name = f"report_{target.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    success = generate_markdown_report(
-        target, nmap_results, shodan_results, dns_results, ai_summary, report_name, output_dir
-    )
-
-    if success:
-        report_path = os.path.join(output_dir, report_name)
-        console.print(f"\n[bold green]Success![/bold green] Report saved to: [underline]{report_path}[/underline]")
-        log.info(f"Report generated: {report_path}")
-    else:
-        console.print("\n[bold red]Error:[/bold red] Failed to generate report file.")
 
 def main():
     parser = argparse.ArgumentParser(description="AI-Powered Recon & Scan Tool")
-    parser.add_argument('--target', required=True, help='The IP or Domain to investigate')
-    parser.add_argument('--output-dir', default='reports', help='Directory to save reports (default: reports/)')
-    parser.add_argument('--model', default=None, help='Ollama model to use (overrides OLLAMA_MODEL env var)')
+    parser.add_argument('--target', help='The IP, CIDR, or Domain to investigate')
+    parser.add_argument('--targets-file', help='File containing target IPs or Domains')
+    parser.add_argument('--output-dir', default='reports', help='Directory to save reports')
+    parser.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown', help='Output format')
+    parser.add_argument('--concurrency', type=int, default=5, help='Number of parallel scans')
+    parser.add_argument('--model', help='Ollama model to use')
+    parser.add_argument('--history', nargs='?', const=True, help='Display scan history')
+    parser.add_argument('--notify', help='Comma-separated notifiers (slack,discord,email)')
+    parser.add_argument('--json', action='store_true', help='Output results as structured JSON to stdout')
     args = parser.parse_args()
 
-    # Validate target before doing anything else
-    if not validate_target(args.target):
-        console.print(f"[bold red]Error:[/bold red] Invalid target: '{args.target}'. Must be a valid IP address or domain name.")
+    if args.history:
+        display_history(args.history if isinstance(args.history, str) else None)
         return
 
-    # Override OLLAMA_MODEL if --model flag is provided
-    if args.model:
-        os.environ['OLLAMA_MODEL'] = args.model
+    if not args.target and not args.targets_file:
+        parser.error("At least one of --target or --targets-file is required.")
 
-    # Quick privilege check for Nmap (Linux/macOS)
-    if os.name != 'nt' and os.geteuid() != 0:
-        console.print("[yellow]Note:[/yellow] Running without sudo. Nmap may use slower TCP connect scans.")
+    if args.json:
+        # Re-initialize logging to stay quiet
+        global log
+        from log_config import setup_logging
+        os.environ['RECON_LOG_QUIET'] = '1'
+        log = setup_logging()
+
+    notify_list = args.notify.split(',') if args.notify else []
 
     try:
-        orchestrate_recon(args.target, args.output_dir)
+        orchestrate_recon(args.target, args.targets_file, args.output_dir, args.format, args.concurrency, notify_list, args.json)
     except KeyboardInterrupt:
-        console.print("\n[bold red]Aborted.[/bold red] Getting out of here!")
+        if not args.json: console.print("\n[bold red]Aborted.[/bold red]")
     except Exception as e:
         log.exception("A fatal error occurred")
-        console.print(f"[bold red]Fatal Error:[/bold red] {e}")
+        if not args.json: console.print(f"[bold red]Fatal Error:[/bold red] {e}")
+
+def display_history(target_filter=None):
+    history_manager = ScanHistory()
+    rows = history_manager.list_history(target_filter)
+    if not rows: console.print("[yellow]No history found.[/yellow]"); return
+    table = Table(title="📜 Scan History", show_header=True, header_style="bold magenta")
+    table.add_column("ID", style="dim")
+    table.add_column("Target", style="cyan")
+    table.add_column("Date", style="green")
+    for row in rows:
+        table.add_row(str(row[0]), row[1], row[2])
+    console.print(table)
+
 
 if __name__ == "__main__":
     main()

@@ -1,144 +1,99 @@
-import ollama
-import json
-import logging
 import os
+import logging
+import json
+import ollama
+from rich.console import Console
 
-# Get a module-specific logger instance
+# Get the logger instance from the root logging setup
 log = logging.getLogger("RECON.AI")
 
-# Configuration from environment variables with sensible defaults
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "kimi-k2.5:cloud")
+# Default Ollama configuration
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-# Maximum characters to send to the LLM to avoid context window overflow
-MAX_LLM_PAYLOAD_CHARS = 12000
+# Payload truncation safety
+MAX_LLM_PAYLOAD_CHARS = 12000 # Safety limit for context window
 
-
-def _prepare_data_for_llm(combined_data: dict) -> str:
+def _prepare_data_for_llm(nmap_data: dict, shodan_data: dict, dns_data: dict, vuln_data: dict = None) -> str:
     """
-    Strips bulky raw data (Shodan raw_data, long banners) from the combined
-    recon results to keep the LLM prompt within context window limits.
-
-    Args:
-        combined_data: The full combined recon dictionary.
-
-    Returns:
-        A truncated JSON string safe for LLM consumption.
+    Cleans and truncates the data before sending to the LLM.
+    Strips bulky 'raw_data' from Shodan results and truncates if necessary.
+    Includes CVE data if provided.
     """
-    # Deep-copy-light: work on a pruned version
-    pruned = {}
+    
+    # 1. Strip raw_data from Shodan to save context space
+    shodan_clean = shodan_data.copy()
+    if 'shodan_data' in shodan_clean:
+        # Keep basic org/location but strip the massive 'data' list
+        sd = shodan_clean['shodan_data']
+        shodan_clean['shodan_data'] = {
+            'org': sd.get('org'),
+            'isp': sd.get('isp'),
+            'city': sd.get('city'),
+            'country': sd.get('country'),
+            'tags': sd.get('tags', []),
+            'vulns': sd.get('vulns', []),
+            'hostnames': sd.get('hostnames', [])
+        }
 
-    for key, value in combined_data.items():
-        if isinstance(value, dict):
-            pruned[key] = {
-                k: v for k, v in value.items()
-                if k not in ("raw_data", "raw_response")
-            }
-        else:
-            pruned[key] = value
+    # 2. Extract ports summary from nmap
+    ports_summary = []
+    for host, data in nmap_data.get('scan', {}).items():
+        if data.get('ports'):
+            for p in data['ports']:
+                ports_summary.append(f"{p.get('portid')}/{p.get('protocol')} ({p.get('service')} {p.get('version')})")
 
-    data_string = json.dumps(pruned, indent=2, default=str)
-
-    # Hard truncation if still too large
-    if len(data_string) > MAX_LLM_PAYLOAD_CHARS:
-        data_string = data_string[:MAX_LLM_PAYLOAD_CHARS] + "\n... [TRUNCATED — data exceeded context limit]"
-        log.warning(f"⚠️ [AI] Payload truncated to {MAX_LLM_PAYLOAD_CHARS} chars to fit LLM context window.")
-
-    return data_string
-
-
-def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict) -> str:
-    """
-    Combines all recon data, generates a prompt, and requests a security summary from the Ollama AI model.
-
-    Args:
-        nmap_data: A raw dictionary containing Nmap/unified scan results.
-        shodan_data: A dictionary containing source information and API reports (can be unified recon data).
-        dns_data: A dictionary containing DNS lookup results.
-
-    Returns:
-        A concise, actionable security summary as a string.
-    """
-    # 1. Combine and format the data into a single string for the prompt
-    combined_data = {
-        "nmap": nmap_data,
-        "shodan": shodan_data,
-        "dns": dns_data
+    # 3. Assemble the prompt context
+    payload = {
+        "targets": list(nmap_data.get('scan', {}).keys()),
+        "open_ports": ports_summary,
+        "dns_records": dns_data,
+        "host_intelligence": shodan_clean,
+        "known_vulnerabilities": vuln_data or {}
     }
+    
+    json_payload = json.dumps(payload, indent=2)
+    
+    # Final safeguard truncation
+    if len(json_payload) > MAX_LLM_PAYLOAD_CHARS:
+        log.warning(f"Payload too large ({len(json_payload)} chars). Truncating for LLM context safety.")
+        return json_payload[:MAX_LLM_PAYLOAD_CHARS] + "\n[... PAYLOAD TRUNCATED]"
+    
+    return json_payload
 
-    # Prepare a trimmed payload for the LLM
-    data_string = _prepare_data_for_llm(combined_data)
-
-    # 2. Craft the System Prompt (This is the most critical part!)
-    # This instructs the AI to adopt a persona and output a structured response.
-    system_prompt = (
-        "You are an expert Cybersecurity Analyst specializing in threat analysis and vulnerability assessment. "
-        "Your task is to analyze the following JSON data containing network reconnaissance results from multiple sources "
-        "(unified recon may include data from Shodan, Netlas, Criminal IP, Censys, and/or Nmap). "
-        "Do not output the raw JSON data. Instead, provide a concise and actionable security summary "
-        "in Markdown format. Your report must include the following sections:\n\n"
-        "### 1. Host Identity & DNS\n"
-        "State the primary IP and discovered hostnames/CNAMES.\n"
-        "### 2. High-Priority Findings\n"
-        "List all open ports and critical information about the target (focus on HTTP/S, SSH, RDP, and other dangerous services). "
-        "If Shodan data is available, highlight organization, location, ISP, and any security tags or vulnerabilities.\n"
-        "### 3. Data Sources & Confidence\n"
-        "List which data sources were queried and their results (Shodan, Netlas, Criminal IP, Censys, Nmap). "
-        "Any data source failures are noted in api_reports.\n"
-        "### 4. Attack Surface Summary\n"
-        "In one paragraph, summarize the most significant vulnerabilities or misconfigurations. "
-        "Which services are most exposed? Include any CVEs or security tags from Shodan if available.\n"
-        "### 5. Next Steps (Actionable)\n"
-        "Provide 3-5 clear, prioritized steps the user should take next based on the findings.\n\n"
-    )
-
-    # 3. Craft the User Prompt
-    user_prompt = (
-        f"--- RAW RECON DATA ---\n"
-        f"{data_string}\n\n"
-        f"Please analyze this reconnaissance data and provide a structured security assessment following the format specified in the system prompt."
-    )
+def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict, vuln_data: dict = None) -> str:
+    """
+    Sends the gathered recon data to the Ollama LLM for a structured security summary.
+    Includes CVE information from NVD if available.
+    """
+    
+    prepared_data = _prepare_data_for_llm(nmap_data, shodan_data, dns_data, vuln_data)
+    
+    prompt = f"""
+    You are a professional security consultant at Recon Buddy AI. 
+    Analyze the following technical reconnaissance data for a target and provide a concise, high-level security summary.
+    
+    RECON DATA:
+    {prepared_data}
+    
+    YOUR TASK:
+    1. Identify the most critical risks (e.g., exposed databases, known vulnerabilities with high CVSS scores).
+    2. Summarize the exposed network surface.
+    3. Provide 3-5 concrete remediation steps.
+    4. Comment on any interesting DNS or host intelligence (Shodan) findings.
+    
+    Format your response using Markdown (use bold and tables where appropriate).
+    Keep it professional, direct, and actionable.
+    """
 
     try:
-        # 4. Call the Ollama API using the modern library interface
-        log.info(f"✅ [AI] Sending {len(data_string)} bytes of recon data to '{OLLAMA_MODEL}' for summary...")
-
-        # Use the modern ollama library API (no OllamaClient needed)
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-
-        return response['message']['content']
-
-    except ConnectionError as e:
-        log.error(f"❌ [AI] Cannot connect to Ollama server at {OLLAMA_HOST}: {e}")
-        return f"❌ ERROR: Cannot connect to Ollama server at {OLLAMA_HOST}. Is 'ollama serve' running?"
-    except KeyError as e:
-        log.error(f"❌ [AI] Unexpected response format from Ollama: {e}")
-        return f"❌ ERROR: Ollama returned an unexpected response. Model '{OLLAMA_MODEL}' may not be compatible."
-    except Exception as e:
-        error_msg = str(e)
-        if "model" in error_msg.lower() and "not found" in error_msg.lower():
-            return f"❌ ERROR: Model '{OLLAMA_MODEL}' not found. Run 'ollama pull {OLLAMA_MODEL}' first."
-        log.exception("Unexpected error during AI summarization")
-        return f"❌ ERROR: Ollama summary failed. Is the Ollama server running and is the model '{OLLAMA_MODEL}' pulled? Details: {e}"
-
-
-if __name__ == "__main__":
-    # --- Example Usage (Requires Ollama server to be running) ---
-    log.info("--- TESTING AI SUMMARIZER (Requires local Ollama server and model) ---")
-
-    # Dummy data simulating outputs from your other modules
-    dummy_nmap = {"scan": {"192.168.1.1": {"status": "up", "ports": [{"port": 80, "service": "http", "version": "Apache 2.4.7"}, {"port": 22, "service": "ssh", "version": "OpenSSH 7.2p2"}]}}}
-    dummy_shodan = {"org": "Example Corp", "tags": ["insecure", "webcam"], "ports": [80, 22]}
-    dummy_dns = {"ipv4_addresses": ["192.168.1.1"], "canonical_name": ["web.example.corp"]}
-
-    summary = create_ai_summary(dummy_nmap, dummy_shodan, dummy_dns)
-
-    log.info("\n--- FINAL AI REPORT ---\n")
-    log.info(summary)
-    log.info("\n-----------------------\n")
+        log.info(f"Sending request to Ollama ({OLLAMA_MODEL}) at {OLLAMA_HOST}...")
+        client = ollama.Client(host=OLLAMA_HOST)
+        response = client.generate(model=OLLAMA_MODEL, prompt=prompt)
+        
+        summary = response.get('response', "AI failed to generate a summary.")
+        return summary
+        
+    except (ollama.ResponseError, ConnectionError, Exception) as e:
+        log.error(f"Ollama Interaction Failed: {e}")
+        return f"⚠️ [bold red]AI Analysis Error:[/bold red] Could not connect to Ollama ({OLLAMA_MODEL}). Ensure Ollama is running.\n\nRaw Error: {e}"
