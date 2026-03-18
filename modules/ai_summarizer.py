@@ -8,8 +8,12 @@ from rich.console import Console
 log = logging.getLogger("RECON.AI")
 
 # Default Ollama configuration
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+def _get_ollama_config():
+    return {
+        "model": os.getenv("OLLAMA_MODEL", "llama3"),
+        "host": os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    }
+
 
 # Payload truncation safety
 MAX_LLM_PAYLOAD_CHARS = 12000 # Safety limit for context window
@@ -86,14 +90,18 @@ def create_ai_summary(nmap_data: dict, shodan_data: dict, dns_data: dict, vuln_d
     Keep it professional, direct, and actionable.
     """
 
+    config = _get_ollama_config()
+    model = config["model"]
+    host = config["host"]
+
     try:
-        log.info(f"Sending request to Ollama ({OLLAMA_MODEL}) at {OLLAMA_HOST}...")
-        client = ollama.Client(host=OLLAMA_HOST)
-        response = client.generate(model=OLLAMA_MODEL, prompt=prompt)
+        log.info(f"Sending request to Ollama ({model}) at {host}...")
+        client = ollama.Client(host=host)
+        response = client.generate(model=model, prompt=prompt)
         
         summary = response.get('response', "AI failed to generate a summary.")
         return summary
         
     except (ollama.ResponseError, ConnectionError, Exception) as e:
         log.error(f"Ollama Interaction Failed: {e}")
-        return f"⚠️ [bold red]AI Analysis Error:[/bold red] Could not connect to Ollama ({OLLAMA_MODEL}). Ensure Ollama is running.\n\nRaw Error: {e}"
+        return f"⚠️ [bold red]AI Analysis Error:[/bold red] Could not connect to Ollama ({model}). Ensure Ollama is running.\n\nRaw Error: {e}"

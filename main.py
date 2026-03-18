@@ -149,6 +149,11 @@ def scan_single_target(target, output_dir, report_format, history_manager, notif
         has_changes = diff['has_changes'] if diff else False
         notifier_manager.notify_scan_complete(target, ports_count, vuln_count, has_changes)
         
+        # 9. Terminal Output (AI Insight)
+        if not json_mode:
+            console.print("") # Separation from progress bar
+            console.print(Panel.fit(ai_summary, title="[bold yellow]AI Security Insight[/bold yellow]", subtitle=f"[dim]{target}[/dim]", border_style="yellow", padding=(1, 2)))
+        
         if json_mode:
             return {
                 "target": target,
@@ -251,6 +256,8 @@ def main():
         log = setup_logging()
 
     notify_list = args.notify.split(',') if args.notify else []
+    if args.model:
+        os.environ['OLLAMA_MODEL'] = args.model
 
     try:
         orchestrate_recon(args.target, args.targets_file, args.output_dir, args.format, args.concurrency, notify_list, args.json)
