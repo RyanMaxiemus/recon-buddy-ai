@@ -239,7 +239,13 @@ def main():
     parser.add_argument('--history', nargs='?', const=True, help='Display scan history')
     parser.add_argument('--notify', help='Comma-separated notifiers (slack,discord,email)')
     parser.add_argument('--json', action='store_true', help='Output results as structured JSON to stdout')
+    parser.add_argument('--gui', action='store_true', help='Launch the graphical user interface (GUI)')
     args = parser.parse_args()
+
+    if args.gui:
+        from modules.gui.main_window import main_gui
+        main_gui()
+        return
 
     if args.history:
         display_history(args.history if isinstance(args.history, str) else None)
